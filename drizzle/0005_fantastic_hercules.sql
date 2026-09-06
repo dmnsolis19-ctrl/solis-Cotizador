@@ -1,0 +1,1 @@
+ALTER TABLE `document_snapshots` ADD `security_profile` text DEFAULT 'legacy' NOT NULL;
