@@ -1,20 +1,21 @@
 const fs = require('fs');
 const path = require('path');
 
-const manifestContent = \
-const proxy = new Proxy({}, {
+const manifestContent = 
+const asset = { chunks: [], file: 'assets/main.js', name: 'main', src: 'main' };
+const proxy = new Proxy({
+    'app/layout.tsx': asset,
+    'app/page.tsx': asset
+}, {
     get(target, prop) {
         if (prop === '__esModule') return true;
-        if (prop === 'default') return proxy;
-        return {
-            chunks: [],
-            file: '',
-            name: String(prop),
-            src: String(prop)
-        };
+        if (prop === 'default' || prop === 'manifest') return proxy;
+        if (target[prop]) return target[prop];
+        return asset;
     }
 });
 export default proxy;
+export const manifest = proxy;
 \;
 
 function locateAndPatch(dir) {
