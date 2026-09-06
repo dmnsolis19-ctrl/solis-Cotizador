@@ -1,21 +1,20 @@
 ﻿const fs = require('fs');
 const path = require('path');
-function walk(d) {
-    let r = [];
-    if (!fs.existsSync(d)) return r;
-    fs.readdirSync(d).forEach(f => {
-        f = path.join(d, f);
-        if (fs.statSync(f).isDirectory()) r = r.concat(walk(f));
-        else if (f.endsWith('.js')) r.push(f);
+function patchDir(dir) {
+    if (!fs.existsSync(dir)) return;
+    fs.readdirSync(dir, { withFileTypes: true }).forEach(entry => {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            patchDir(fullPath);
+        } else if (entry.name.endsWith('.js')) {
+            let content = fs.readFileSync(fullPath, 'utf8');
+            if (content.includes('__vite_rsc_assets_manifest.js')) {
+                content = content.replaceAll('__vite_rsc_assets_manifest.js', './__vite_rsc_assets_manifest.js');
+                fs.writeFileSync(fullPath, content);
+            }
+        }
     });
-    return r;
+    fs.writeFileSync(path.join(dir, '__vite_rsc_assets_manifest.js'), 'export default {};');
 }
-walk('./dist').forEach(f => {
-    let d = fs.readFileSync(f, 'utf8');
-    if (d.includes('__vite_rsc_assets_manifest.js')) {
-        d = d.replaceAll('__vite_rsc_assets_manifest.js', './__vite_rsc_assets_manifest.js');
-        fs.writeFileSync(f, d);
-        fs.writeFileSync(path.join(path.dirname(f), '__vite_rsc_assets_manifest.js'), 'export default {};');
-        console.log('Manifiesto RSC auto-generado en:', f);
-    }
-});
+patchDir('./dist');
+console.log('Manifiesto RSC aplicado en todo dist.');
