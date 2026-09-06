@@ -1,6 +1,6 @@
 ﻿{
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "solis-cotizador"`n  "rules": [`n    { "type": "ESModule", "globs": ["**/__vite_rsc_assets_manifest.js"] }`n  ],
+  "name": "solis-cotizador" "rules": [`n    { "type": "ESModule", "globs": ["**/__vite_rsc_assets_manifest.js"] }`n  ],
   "main": "./dist/server/index.js",
   "compatibility_date": "2026-05-15",
   "compatibility_flags": ["nodejs_compat"],
