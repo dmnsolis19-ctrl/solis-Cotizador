@@ -9,18 +9,17 @@ function scan(dir) {
         } else if (e.name.endsWith('.js') || e.name.endsWith('.mjs')) {
             let code = fs.readFileSync(full, 'utf8');
             if (code.includes('__vite_rsc_assets_manifest')) {
-                console.log('Found reference in:', full);
-                code = code.replaceAll('from "__vite_rsc_assets_manifest.js"', 'from "./__vite_rsc_assets_manifest.js"')
-                           .replaceAll("from '__vite_rsc_assets_manifest.js'", "from './__vite_rsc_assets_manifest.js'")
-                           .replaceAll('__vite_rsc_assets_manifest.js', './__vite_rsc_assets_manifest.js');
+                console.log('Neutralizing manifest import in:', full);
+                // Reemplaza la importación estática por un objeto vacío local
+                code = code.replace(/import\s+(\w+)\s+from\s+['"][^'"]*__vite_rsc_assets_manifest\.js['"];?/g, 'const  = {};');
+                code = code.replace(/import\s*\(['"][^'"]*__vite_rsc_assets_manifest\.js['"]\)/g, 'Promise.resolve({ default: {} })');
+                // Fallback para cualquier otra referencia suelta
+                code = code.replaceAll('__vite_rsc_assets_manifest.js', './__vite_rsc_assets_manifest.js');
                 fs.writeFileSync(full, code, 'utf8');
-                const mp = path.join(dir, '__vite_rsc_assets_manifest.js');
-                fs.writeFileSync(mp, 'export default {};', 'utf8');
-                console.log('Created manifest at:', mp);
             }
         }
     });
 }
 scan('./dist');
 fs.writeFileSync('./dist/__vite_rsc_assets_manifest.js', 'export default {};', 'utf8');
-console.log('Enhanced patch completed.');
+console.log('Manifest import neutralized successfully.');
