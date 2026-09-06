@@ -1,6 +1,22 @@
 const fs = require('fs');
 const path = require('path');
 
+const manifestContent = \
+const proxy = new Proxy({}, {
+    get(target, prop) {
+        if (prop === '__esModule') return true;
+        if (prop === 'default') return proxy;
+        return {
+            chunks: [],
+            file: '',
+            name: String(prop),
+            src: String(prop)
+        };
+    }
+});
+export default proxy;
+\;
+
 function locateAndPatch(dir) {
     if (!fs.existsSync(dir)) return;
     fs.readdirSync(dir, { withFileTypes: true }).forEach(e => {
@@ -10,13 +26,12 @@ function locateAndPatch(dir) {
         } else if (e.name === 'index.js' || e.name === 'worker.js') {
             const targetDir = path.dirname(full);
             const manifestPath = path.join(targetDir, '__vite_rsc_assets_manifest.js');
-            fs.writeFileSync(manifestPath, 'export default {};', 'utf8');
-            console.log('Manifiesto RSC colocado junto al servidor en:', manifestPath);
+            fs.writeFileSync(manifestPath, manifestContent, 'utf8');
+            console.log('Advanced Proxy manifest placed at:', manifestPath);
         }
     });
 }
 
 locateAndPatch('./dist');
-// Resguardo en la raíz de dist por si acaso
-fs.writeFileSync('./dist/__vite_rsc_assets_manifest.js', 'export default {};', 'utf8');
-console.log('Parche de manifiesto aplicado correctamente.');
+fs.writeFileSync('./dist/__vite_rsc_assets_manifest.js', manifestContent, 'utf8');
+console.log('RSC advanced proxy patch completed.');
