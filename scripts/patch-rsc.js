@@ -9,17 +9,21 @@ function scan(dir) {
         } else if (e.name.endsWith('.js') || e.name.endsWith('.mjs')) {
             let code = fs.readFileSync(full, 'utf8');
             if (code.includes('__vite_rsc_assets_manifest')) {
-                console.log('Neutralizing manifest import in:', full);
-                // Reemplaza la importación estática por un objeto vacío local
-                code = code.replace(/import\s+(\w+)\s+from\s+['"][^'"]*__vite_rsc_assets_manifest\.js['"];?/g, 'const  = {};');
-                code = code.replace(/import\s*\(['"][^'"]*__vite_rsc_assets_manifest\.js['"]\)/g, 'Promise.resolve({ default: {} })');
-                // Fallback para cualquier otra referencia suelta
-                code = code.replaceAll('__vite_rsc_assets_manifest.js', './__vite_rsc_assets_manifest.js');
+                console.log('Stripping and mocking manifest in:', full);
+                const lines = code.split('\n');
+                // Filtramos cualquier línea que intente importar el manifiesto faltante
+                const filtered = lines.filter(line => !line.includes('__vite_rsc_assets_manifest'));
+                // Inyectamos un objeto vacío al inicio del archivo para satisfacer cualquier referencia
+                filtered.unshift('const __vite_rsc_assets_manifest = {};');
+                code = filtered.join('\n');
                 fs.writeFileSync(full, code, 'utf8');
+                
+                // Creamos el archivo físico por seguridad en la misma carpeta
+                const mp = path.join(dir, '__vite_rsc_assets_manifest.js');
+                fs.writeFileSync(mp, 'export default {};', 'utf8');
             }
         }
     });
 }
 scan('./dist');
-fs.writeFileSync('./dist/__vite_rsc_assets_manifest.js', 'export default {};', 'utf8');
-console.log('Manifest import neutralized successfully.');
+console.log('Robust manifest patch completed.');
