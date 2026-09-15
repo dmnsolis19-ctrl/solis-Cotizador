@@ -11,26 +11,24 @@ SOLIS Cotizador debe ejecutarse como un **Cloudflare Worker** con una base **D1*
 5. Un bucket R2 con binding lógico `BUCKET`.
 6. Un Worker para la aplicación.
 
-## Secuencia recomendada
+## Primera publicación
 
 ```bash
-npx wrangler login
-npx wrangler d1 create solis-cotizador-db
-npx wrangler r2 bucket create solis-cotizador-documents
+npx.cmd wrangler login
 ```
 
-Copie el `database_id` retornado a la configuración Wrangler de la cuenta de destino. El binding debe llamarse exactamente `DB`.
+Esta distribución ya está configurada para la base `solis-cotizador-db` y el bucket privado `solis-cotizador-documents`. Los bindings deben llamarse exactamente `DB` y `BUCKET`.
 
 Antes de la primera publicación, aplique las migraciones en orden:
 
 ```bash
-npx wrangler d1 migrations apply solis-cotizador-db --remote
+npx.cmd wrangler d1 migrations apply DB --remote --config wrangler.production.jsonc
 ```
 
-Vinext recomienda desplegar su adaptación Cloudflare con:
+En Windows PowerShell, use el script incluido. Compila con Vinext, actualiza la configuración generada por Vinext con los bindings reales y publica el Worker:
 
 ```bash
-npx @vinext/cloudflare deploy
+.\scripts\deploy-cloudflare.ps1
 ```
 
 El dominio personalizado se asocia después al Worker desde **Workers & Pages → Custom domains**. Mantenga D1, R2 y el Worker en la misma cuenta. No exponga el bucket públicamente: las descargas pasan por `/api/documents/:publicId`, donde se valida el propietario autenticado.
@@ -51,7 +49,7 @@ En v2.8, la creación y actualización de actividades, los registros de horas y 
 
 ## Identidad, roles y auditoría
 
-La PWA usa la identidad autenticada enviada por la plataforma en `oai-authenticated-user-email`. No mantiene contraseñas propias. La tabla `app_users` vincula ese correo con la cuenta SOLIS y uno de cuatro roles:
+La PWA usa cuentas propias de SOLIS con correo y contraseña. La primera cuenta creada en una instalación vacía queda como administradora; las demás se crean desde **Usuarios y roles**. La tabla `app_users` vincula el correo con uno de cuatro roles y `auth_credentials` conserva solamente hashes PBKDF2-SHA-256 con sal única, nunca contraseñas visibles.
 
 - **Administrador:** configuración completa, usuarios, importaciones y auditoría.
 - **Cotizador:** clientes, biblioteca, cotizaciones, revisiones y PDF comercial; no aprueba.
@@ -68,7 +66,7 @@ La conformidad dibujada en la PWA es una aceptación operativa trazable. No debe
 
 Los PDF de órdenes creados desde v2.4 usan el perfil `operational_v2` y omiten la venta aprobada. Los documentos anteriores conservan el perfil `legacy`: administradores y supervisores pueden descargarlos, pero el rol técnico debe generar una nueva versión operativa para evitar exponer información comercial histórica.
 
-La política de acceso de Cloudflare/Sites y `app_users` son dos controles distintos: el primero permite entrar al Worker y el segundo determina qué puede hacer la persona dentro de la aplicación. El correo debe estar autorizado en ambos. Todas las operaciones sensibles se atribuyen a la identidad del servidor y se conservan en `audit_events`; no se acepta como identidad un nombre escrito por el navegador.
+Las sesiones se guardan como hashes en `auth_sessions` y se entregan mediante una cookie `HttpOnly`, `Secure` y `SameSite=Strict`. Todas las operaciones sensibles se atribuyen a la sesión autenticada y se conservan en `audit_events`; no se acepta como identidad un nombre escrito por el navegador.
 
 ## Reglas de operación
 

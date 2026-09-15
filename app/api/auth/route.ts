@@ -42,24 +42,22 @@ export async function PUT(request: Request) {
     const input = setupSchema.parse(await request.json());
     const db = getDb();
     const [{ value }] = await db.select({ value: count() }).from(appUsers);
-    
     if (Number(value) !== 0) return Response.json({ error: "La cuenta inicial ya fue configurada." }, { status: 409 });
-    
     const now = new Date().toISOString();
     const publicId = crypto.randomUUID();
     const salt = newSalt();
-    
     await db.batch([
       db.insert(appUsers).values({ publicId, ownerEmail: input.email, email: input.email, name: input.name, role: "administrator", active: true, createdBy: input.email, createdAt: now, updatedAt: now }),
-      db.insert(authCredentials).values({ userPublicId: publicId, passwordHash: await hashPassword(input.password, salt), passwordSalt: salt, iterations: 100000, updatedAt: now }),
+      db.insert(authCredentials).values({ userPublicId: publicId, passwordHash: await hashPassword(input.password, salt), passwordSalt: salt, iterations: 210000, updatedAt: now }),
     ]);
-    
     await setSession(publicId);
     return Response.json({ ok: true }, { status: 201 });
   } catch (error) {
-    console.error("Fallo detectado en el servidor:", error);
-    const realError = error instanceof Error ? error.message : String(error);
-    return Response.json({ error: `Fallo técnico: ${realError}` }, { status: 400 });
+    // Keep the browser response generic, but retain the operational error in
+    // Cloudflare's protected Worker logs for support diagnostics.
+    console.error("Initial-account creation failed", error);
+    const message = error instanceof z.ZodError ? "Use un nombre válido, un correo válido y una contraseña de al menos 10 caracteres." : "No fue posible crear la cuenta inicial.";
+    return Response.json({ error: message }, { status: 400 });
   }
 }
 

@@ -19,6 +19,13 @@ test("hashes passwords with a unique salt and verifies in constant-time style", 
   assert.equal(secureEqual(first, second), false);
 });
 
+test("keeps the 210,000-round password work factor within Cloudflare's per-call limit", async () => {
+  const { hashPassword, secureEqual } = await vite.ssrLoadModule("/lib/password.ts");
+  const first = await hashPassword("A-long-test-password", "fixed-test-salt", 210000);
+  const repeated = await hashPassword("A-long-test-password", "fixed-test-salt", 210000);
+  assert.equal(secureEqual(first, repeated), true);
+});
+
 test("uses secure server sessions and protects login attempts", async () => {
   const route = await readFile(new URL("../app/api/auth/route.ts", import.meta.url), "utf8");
   assert.match(route, /httpOnly:\s*true/);
