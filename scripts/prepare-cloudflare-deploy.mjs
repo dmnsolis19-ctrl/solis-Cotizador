@@ -16,7 +16,7 @@ generated.compatibility_flags = production.compatibility_flags;
 generated.d1_databases = production.d1_databases;
 generated.r2_buckets = production.r2_buckets;
 
-fs.writeFileSync(generatedPath, JSON.stringify(generated, null, 2) + "`n", "utf8");
+fs.writeFileSync(generatedPath, JSON.stringify(generated, null, 2) + "\n", "utf8");
 
 console.log("Configuración generada preparada correctamente:");
 console.log(`Worker: ${generated.name}`);
