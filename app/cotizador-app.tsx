@@ -155,6 +155,7 @@ type Client = {
   address: string;
   updatedAt: string;
 };
+type QuoteLineDraft = QuoteLine & { rowId: string };
 type CatalogItem = {
   publicId: string;
   code: string;
@@ -2493,7 +2494,7 @@ function QuoteDialog({
   const [project, setProject] = useState("");
   const [issueDate, setIssueDate] = useState(today());
   const [quoteCurrency, setQuoteCurrency] = useState("CLP");
-  const [lines, setLines] = useState<QuoteLine[]>([]);
+  const [lines, setLines] = useState<QuoteLineDraft[]>([]);
   const [catalogId, setCatalogId] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(Boolean(quote));
@@ -2551,7 +2552,7 @@ function QuoteDialog({
         setProject(detail.quote.project);
         setIssueDate(detail.quote.issueDate);
         setQuoteCurrency(detail.quote.currency);
-        setLines(detail.items);
+        setLines(detail.items.map((item) => ({ ...item, rowId: crypto.randomUUID() })));
         setDiscount(detail.commercial.discountPercent);
         setTaxPercent(detail.commercial.taxPercent);
         setOverheadPercent(detail.commercial.overheadPercent);
@@ -2587,6 +2588,7 @@ function QuoteDialog({
     setLines((current) => [
       ...current,
       {
+        rowId: crypto.randomUUID(),
         name: item.name,
         detail: item.description,
         quantity: 1,
@@ -2598,7 +2600,7 @@ function QuoteDialog({
     setCatalogId("");
   };
   const addManualLine = () => {
-    setLines((current) => [...current, { name: "Nueva partida", detail: "", quantity: 1, unit: "un", unitCost: 0, unitPrice: 0 }]);
+    setLines((current) => [...current, { rowId: crypto.randomUUID(), name: "Nueva partida", detail: "", quantity: 1, unit: "un", unitCost: 0, unitPrice: 0 }]);
   };
   const updateLine = (index: number, changes: Partial<QuoteLine>) => {
     setLines((current) => current.map((item, position) => position === index ? { ...item, ...changes } : item));
@@ -2621,7 +2623,14 @@ function QuoteDialog({
       paymentTerms,
       deliveryTerms,
       notes,
-      items: lines,
+      items: lines.map((line) => ({
+        name: line.name,
+        detail: line.detail,
+        quantity: line.quantity,
+        unit: line.unit,
+        unitCost: line.unitCost,
+        unitPrice: line.unitPrice,
+      })),
     };
     setSaving(true);
     try {
@@ -2647,7 +2656,7 @@ function QuoteDialog({
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
+      <DialogContent className="max-h-[92vh] overflow-x-hidden overflow-y-auto sm:max-w-6xl">
         <DialogHeader>
           <DialogTitle>{quote ? `Editar ${quote.number}` : "Nueva cotización"}</DialogTitle>
           <DialogDescription>
@@ -2722,33 +2731,32 @@ function QuoteDialog({
             </Button>
           </div>
           {lines.length ? (
-            <div className="overflow-x-auto">
-            <Table>
+            <Table className="min-w-[940px] table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-64">Partida</TableHead>
-                  <TableHead>Cant.</TableHead>
-                  <TableHead>Unidad</TableHead>
-                  <TableHead>Costo unit.</TableHead>
-                  <TableHead>Venta unit.</TableHead>
-                  <TableHead className="text-right">Subtotal</TableHead>
-                  <TableHead />
+                  <TableHead className="w-[330px]">Partida</TableHead>
+                  <TableHead className="w-[85px]">Cant.</TableHead>
+                  <TableHead className="w-[90px]">Unidad</TableHead>
+                  <TableHead className="w-[135px]">Costo unit.</TableHead>
+                  <TableHead className="w-[135px]">Venta unit.</TableHead>
+                  <TableHead className="w-[120px] text-right">Subtotal</TableHead>
+                  <TableHead className="w-[45px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {lines.map((line, index) => (
-                  <TableRow key={`${line.name}-${index}`}>
-                    <TableCell>
+                  <TableRow key={line.rowId}>
+                    <TableCell className="whitespace-normal">
                       <Input
                         value={line.name}
                         onChange={(event) => updateLine(index, { name: event.target.value })}
-                        className="min-w-56 bg-white font-medium"
+                        className="w-full min-w-0 bg-white font-medium"
                         aria-label={`Nombre de partida ${index + 1}`}
                       />
                       <Input
                         value={line.detail || ""}
                         onChange={(event) => updateLine(index, { detail: event.target.value })}
-                        className="mt-2 min-w-56 bg-white text-xs"
+                        className="mt-2 w-full min-w-0 bg-white text-xs"
                         placeholder="Descripción o alcance"
                         aria-label={`Detalle de partida ${index + 1}`}
                       />
@@ -2760,17 +2768,17 @@ function QuoteDialog({
                         step="0.01"
                         value={line.quantity}
                         onChange={(e) => updateLine(index, { quantity: Number(e.target.value) })}
-                        className="w-20 bg-white"
+                        className="w-full min-w-0 bg-white"
                       />
                     </TableCell>
                     <TableCell>
-                      <Input value={line.unit} onChange={(event) => updateLine(index, { unit: event.target.value })} className="w-20 bg-white" aria-label={`Unidad de partida ${index + 1}`} />
+                      <Input value={line.unit} onChange={(event) => updateLine(index, { unit: event.target.value })} className="w-full min-w-0 bg-white" aria-label={`Unidad de partida ${index + 1}`} />
                     </TableCell>
                     <TableCell className="bg-blue-50 text-blue-800">
-                      <Input type="number" min="0" step="0.01" value={line.unitCost} onChange={(event) => updateLine(index, { unitCost: Number(event.target.value) })} className="w-32 bg-white" aria-label={`Costo unitario de partida ${index + 1}`} />
+                      <Input type="number" min="0" step="0.01" value={line.unitCost} onChange={(event) => updateLine(index, { unitCost: Number(event.target.value) })} className="w-full min-w-0 bg-white" aria-label={`Costo unitario de partida ${index + 1}`} />
                     </TableCell>
                     <TableCell>
-                      <Input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(index, { unitPrice: Number(event.target.value) })} className="w-32 bg-white" aria-label={`Precio unitario de partida ${index + 1}`} />
+                      <Input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(index, { unitPrice: Number(event.target.value) })} className="w-full min-w-0 bg-white" aria-label={`Precio unitario de partida ${index + 1}`} />
                     </TableCell>
                     <TableCell className="text-right font-medium">
                       {money(line.quantity * line.unitPrice, quoteCurrency)}
@@ -2793,7 +2801,6 @@ function QuoteDialog({
                 ))}
               </TableBody>
             </Table>
-            </div>
           ) : (
             <div className="py-8 text-center text-sm text-slate-500">
               Agregue partidas desde la biblioteca de precios.

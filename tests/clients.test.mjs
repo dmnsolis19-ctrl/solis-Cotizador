@@ -35,3 +35,13 @@ test("connects client editing across UI, API, audit and offline sync", async () 
   assert.match(sync, /"client\.update": updateClient/);
   assert.match(contract, /"client\.update"/);
 });
+
+test("keeps quote line focus stable and contains its responsive table", async () => {
+  const app = await readFile(new URL("../app/cotizador-app.tsx", import.meta.url), "utf8");
+  assert.match(app, /type QuoteLineDraft = QuoteLine & \{ rowId: string \}/);
+  assert.match(app, /<TableRow key=\{line\.rowId\}>/);
+  assert.doesNotMatch(app, /key=\{`\$\{line\.name\}-\$\{index\}`\}/);
+  assert.match(app, /min-w-\[940px\] table-fixed/);
+  assert.match(app, /overflow-x-hidden overflow-y-auto sm:max-w-6xl/);
+  assert.match(app, /items: lines\.map/);
+});
