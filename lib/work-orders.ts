@@ -1,4 +1,5 @@
 import type { AppRole } from "@/lib/permissions";
+import { businessDate } from "@/lib/dates";
 
 export const ORDER_PRIORITIES = ["Baja", "Normal", "Alta", "Urgente"] as const;
 export type OrderPriority = (typeof ORDER_PRIORITIES)[number];
@@ -28,7 +29,7 @@ export function isWorkOrderClosed(order: { status: string; closedAt?: string }) 
 export function isOrderOverdue(
   dueDate: string,
   status: string,
-  referenceDate = new Date().toISOString().slice(0, 10),
+  referenceDate = businessDate(),
 ) {
   return Boolean(
     dueDate &&
@@ -40,7 +41,7 @@ export function isOrderOverdue(
 export function isOrderDueSoon(
   dueDate: string,
   status: string,
-  referenceDate = new Date().toISOString().slice(0, 10),
+  referenceDate = businessDate(),
   days = 3,
 ) {
   if (!dueDate || ["Completada", "Cerrada", "Cancelada"].includes(status)) return false;

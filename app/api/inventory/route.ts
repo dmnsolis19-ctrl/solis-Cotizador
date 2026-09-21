@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { and, asc, count, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
@@ -8,6 +9,8 @@ import {
 import { writeAuditEvent } from "@/lib/audit";
 import { AuthorizationError, authorizationResponse, requirePermission } from "@/lib/auth";
 import { purchaseReceiptStatus, purchaseTotals, weightedAverageCost } from "@/lib/procurement";
+import { documentScope, reserveDocumentSequence } from "@/lib/sequences";
+import { businessDate, businessYear } from "@/lib/dates";
 import { isWorkOrderClosed } from "@/lib/work-orders";
 
 const purchaseLineSchema = z.object({ publicId: z.string().uuid(), unitCost: z.number().min(0).max(1_000_000_000) });
@@ -30,6 +33,8 @@ type Session = Awaited<ReturnType<typeof requirePermission>>;
 const n = (value: unknown) => Number(value || 0);
 const actor = (session: Session) => session.user.name || session.user.email;
 
+class InventoryConflictError extends Error {}
+
 function assertPermission(session: Session, permission: "inventory.manage" | "purchases.manage" | "purchases.approve") {
   if (!session.permissions.includes(permission)) throw new AuthorizationError("Su rol no permite realizar esta operación.", 403);
 }
@@ -44,34 +49,67 @@ async function ensureBalance(input: { ownerEmail: string; warehousePublicId: str
   const existing = await balanceFor(input.ownerEmail, input.warehousePublicId, input.catalogItemPublicId);
   if (existing) return existing;
   const publicId = crypto.randomUUID();
-  await getDb().insert(inventoryBalances).values({ publicId, ...input, quantity: "0", reservedQuantity: "0", minimumQuantity: "0", averageUnitCost: "0", updatedAt: new Date().toISOString() });
-  return (await getDb().select().from(inventoryBalances).where(eq(inventoryBalances.publicId, publicId)).limit(1))[0];
+  await getDb().insert(inventoryBalances).values({ publicId, ...input, quantity: "0", reservedQuantity: "0", minimumQuantity: "0", averageUnitCost: "0", updatedAt: new Date().toISOString() })
+    .onConflictDoNothing();
+  const balance = await balanceFor(input.ownerEmail, input.warehousePublicId, input.catalogItemPublicId);
+  if (!balance) throw new Error("No fue posible preparar el saldo de inventario.");
+  return balance;
 }
 
 async function move(session: Session, balance: typeof inventoryBalances.$inferSelect, input: {
   type: string; quantity: number; stockAfter: number; reservedAfter: number; averageUnitCost?: number;
   workOrderPublicId?: string; activityPublicId?: string; materialRequestPublicId?: string; reference?: string; reason?: string;
 }) {
-  const now = new Date().toISOString();
-  await getDb().update(inventoryBalances).set({ quantity: String(input.stockAfter), reservedQuantity: String(input.reservedAfter), averageUnitCost: String(input.averageUnitCost ?? n(balance.averageUnitCost)), updatedAt: now }).where(and(eq(inventoryBalances.ownerEmail, session.ownerEmail), eq(inventoryBalances.publicId, balance.publicId)));
-  await getDb().insert(inventoryMovements).values({
-    publicId: crypto.randomUUID(), ownerEmail: session.ownerEmail, warehousePublicId: balance.warehousePublicId,
-    catalogItemPublicId: balance.catalogItemPublicId, movementType: input.type, quantity: String(input.quantity),
-    stockBefore: balance.quantity, stockAfter: String(input.stockAfter), reservedBefore: balance.reservedQuantity,
-    reservedAfter: String(input.reservedAfter), workOrderPublicId: input.workOrderPublicId || "",
-    activityPublicId: input.activityPublicId || "", materialRequestPublicId: input.materialRequestPublicId || "",
-    reference: input.reference || "", reason: input.reason || "", actor: actor(session), createdAt: now,
-  });
+  const previousTime = Date.parse(balance.updatedAt);
+  const now = new Date(Math.max(Date.now(), Number.isFinite(previousTime) ? previousTime + 1 : 0)).toISOString();
+  const movementPublicId = crypto.randomUUID();
+  const results = await env.DB.batch([
+    env.DB.prepare(`
+      UPDATE inventory_balances SET
+        quantity = ?, reserved_quantity = ?, average_unit_cost = ?, updated_at = ?
+      WHERE owner_email = ? AND public_id = ? AND updated_at = ?
+        AND quantity = ? AND reserved_quantity = ?
+    `).bind(
+      String(input.stockAfter), String(input.reservedAfter), String(input.averageUnitCost ?? n(balance.averageUnitCost)), now,
+      session.ownerEmail, balance.publicId, balance.updatedAt, balance.quantity, balance.reservedQuantity,
+    ),
+    env.DB.prepare(`
+      INSERT INTO inventory_movements (
+        public_id, owner_email, warehouse_public_id, catalog_item_public_id, movement_type,
+        quantity, stock_before, stock_after, reserved_before, reserved_after,
+        work_order_public_id, activity_public_id, material_request_public_id,
+        reference, reason, actor, created_at
+      )
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM inventory_balances
+        WHERE owner_email = ? AND public_id = ? AND updated_at = ?
+      )
+    `).bind(
+      movementPublicId, session.ownerEmail, balance.warehousePublicId, balance.catalogItemPublicId,
+      input.type, String(input.quantity), balance.quantity, String(input.stockAfter),
+      balance.reservedQuantity, String(input.reservedAfter), input.workOrderPublicId || "",
+      input.activityPublicId || "", input.materialRequestPublicId || "", input.reference || "",
+      input.reason || "", actor(session), now, session.ownerEmail, balance.publicId, now,
+    ),
+  ]);
+  if (Number(results[0]?.meta?.changes || 0) !== 1 || Number(results[1]?.meta?.changes || 0) !== 1) {
+    throw new InventoryConflictError("El saldo de inventario cambió en otro dispositivo. Actualice y vuelva a intentar.");
+  }
 }
 
 async function createPurchase(session: Session, materialRequest: typeof materialRequests.$inferSelect, warehousePublicId: string, shortages: Array<{ item: typeof materialRequestItems.$inferSelect; quantity: number }>) {
   if (!shortages.length) return "";
   const [{ value }] = await getDb().select({ value: count() }).from(purchaseRequests).where(eq(purchaseRequests.ownerEmail, session.ownerEmail));
-  const number = `OC-${new Date().getUTCFullYear()}-${String(Number(value) + 1).padStart(5, "0")}`;
+  const sequence = await reserveDocumentSequence(session.ownerEmail, documentScope("purchase"), Number(value));
+  const number = `OC-${businessYear()}-${String(sequence).padStart(5, "0")}`;
   const publicId = crypto.randomUUID();
   const now = new Date().toISOString();
-  await getDb().insert(purchaseRequests).values({ publicId, ownerEmail: session.ownerEmail, number, materialRequestPublicId: materialRequest.publicId, workOrderPublicId: materialRequest.workOrderPublicId, warehousePublicId, status: "Solicitada", createdBy: actor(session), createdAt: now, updatedAt: now });
-  await getDb().insert(purchaseRequestItems).values(shortages.map(({ item, quantity }) => ({ publicId: crypto.randomUUID(), ownerEmail: session.ownerEmail, purchaseRequestPublicId: publicId, materialRequestItemPublicId: item.publicId, catalogItemPublicId: item.catalogItemPublicId, description: item.description, quantity: String(quantity), unit: item.unit, unitCost: "0", lineTotal: "0", receivedQuantity: "0" })));
+  const db = getDb();
+  await db.batch([
+    db.insert(purchaseRequests).values({ publicId, ownerEmail: session.ownerEmail, number, materialRequestPublicId: materialRequest.publicId, workOrderPublicId: materialRequest.workOrderPublicId, warehousePublicId, status: "Solicitada", createdBy: actor(session), createdAt: now, updatedAt: now }),
+    db.insert(purchaseRequestItems).values(shortages.map(({ item, quantity }) => ({ publicId: crypto.randomUUID(), ownerEmail: session.ownerEmail, purchaseRequestPublicId: publicId, materialRequestItemPublicId: item.publicId, catalogItemPublicId: item.catalogItemPublicId, description: item.description, quantity: String(quantity), unit: item.unit, unitCost: "0", lineTotal: "0", receivedQuantity: "0" }))),
+  ]);
   return publicId;
 }
 
@@ -143,7 +181,7 @@ export async function POST(request: Request) {
       const balance = await ensureBalance({ ownerEmail: session.ownerEmail, warehousePublicId: warehouse.publicId, catalogItemPublicId: item.publicId, itemCode: item.code, itemName: item.name, unit: item.unit });
       const averageUnitCost = weightedAverageCost(n(balance.quantity), n(balance.averageUnitCost), input.quantity, input.unitCost);
       await move(session, balance, { type: "RECEIPT", quantity: input.quantity, stockAfter: n(balance.quantity) + input.quantity, reservedAfter: n(balance.reservedQuantity), averageUnitCost, reference: input.reference, reason: input.reason });
-      await db.update(inventoryBalances).set({ minimumQuantity: String(input.minimumQuantity) }).where(eq(inventoryBalances.publicId, balance.publicId));
+      await db.update(inventoryBalances).set({ minimumQuantity: String(input.minimumQuantity) }).where(and(eq(inventoryBalances.ownerEmail, session.ownerEmail), eq(inventoryBalances.publicId, balance.publicId)));
       await writeAuditEvent(session, { action: "INVENTORY_RECEIVED", entityType: "inventory_balance", entityPublicId: balance.publicId, detail: { quantity: input.quantity, unitCost: input.unitCost, averageUnitCost, warehousePublicId: warehouse.publicId, catalogItemPublicId: item.publicId } });
       return Response.json({ ok: true });
     }
@@ -154,7 +192,7 @@ export async function POST(request: Request) {
       if (!balance) return Response.json({ error: "El saldo de inventario no existe." }, { status: 404 });
       if (input.newQuantity < n(balance.reservedQuantity)) return Response.json({ error: "El nuevo saldo no puede ser menor que la cantidad reservada." }, { status: 409 });
       await move(session, balance, { type: "ADJUSTMENT", quantity: input.newQuantity - n(balance.quantity), stockAfter: input.newQuantity, reservedAfter: n(balance.reservedQuantity), reason: input.reason });
-      await db.update(inventoryBalances).set({ minimumQuantity: String(input.minimumQuantity) }).where(eq(inventoryBalances.publicId, balance.publicId));
+      await db.update(inventoryBalances).set({ minimumQuantity: String(input.minimumQuantity) }).where(and(eq(inventoryBalances.ownerEmail, session.ownerEmail), eq(inventoryBalances.publicId, balance.publicId)));
       await writeAuditEvent(session, { action: "INVENTORY_ADJUSTED", entityType: "inventory_balance", entityPublicId: balance.publicId, detail: { previous: n(balance.quantity), next: input.newQuantity, reason: input.reason } });
       return Response.json({ ok: true });
     }
@@ -176,16 +214,16 @@ export async function POST(request: Request) {
         const available = balance ? Math.max(0, n(balance.quantity) - n(balance.reservedQuantity)) : 0;
         const alreadyCovered = existing ? n(existing.reservedQuantity) + n(existing.issuedQuantity) : 0;
         const reserved = Math.min(Math.max(0, requested - alreadyCovered), available);
-        if (existing) await db.update(materialAllocations).set({ reservedQuantity: String(n(existing.reservedQuantity) + reserved), status: alreadyCovered + reserved >= requested ? "Reservada" : "Parcial", updatedAt: now }).where(eq(materialAllocations.publicId, existing.publicId));
-        else await db.insert(materialAllocations).values({ publicId: crypto.randomUUID(), ownerEmail: session.ownerEmail, materialRequestPublicId: materialRequest.publicId, materialRequestItemPublicId: item.publicId, warehousePublicId: warehouse.publicId, catalogItemPublicId: catalogKey, requestedQuantity: String(requested), reservedQuantity: String(reserved), issuedQuantity: "0", returnedQuantity: "0", issueUnitCost: "0", status: reserved === requested ? "Reservada" : "Parcial", updatedAt: now });
         if (balance && reserved > 0) await move(session, balance, { type: "RESERVATION", quantity: reserved, stockAfter: n(balance.quantity), reservedAfter: n(balance.reservedQuantity) + reserved, workOrderPublicId: materialRequest.workOrderPublicId, activityPublicId: materialRequest.activityPublicId, materialRequestPublicId: materialRequest.publicId, reason: "Reserva para orden de trabajo" });
+        if (existing) await db.update(materialAllocations).set({ reservedQuantity: String(n(existing.reservedQuantity) + reserved), status: alreadyCovered + reserved >= requested ? "Reservada" : "Parcial", updatedAt: now }).where(and(eq(materialAllocations.ownerEmail, session.ownerEmail), eq(materialAllocations.publicId, existing.publicId)));
+        else await db.insert(materialAllocations).values({ publicId: crypto.randomUUID(), ownerEmail: session.ownerEmail, materialRequestPublicId: materialRequest.publicId, materialRequestItemPublicId: item.publicId, warehousePublicId: warehouse.publicId, catalogItemPublicId: catalogKey, requestedQuantity: String(requested), reservedQuantity: String(reserved), issuedQuantity: "0", returnedQuantity: "0", issueUnitCost: "0", status: reserved === requested ? "Reservada" : "Parcial", updatedAt: now });
         if (alreadyCovered + reserved < requested) shortages.push({ item, quantity: requested - alreadyCovered - reserved });
       }
       let purchasePublicId = existingPurchases.find((purchase) => !["Recibida", "Cancelada"].includes(purchase.status))?.publicId || "";
       if (shortages.length && !purchasePublicId) purchasePublicId = await createPurchase(session, materialRequest, warehouse.publicId, shortages);
       const status = shortages.length ? "Compra requerida" : "Reservada";
-      if (!shortages.length) for (const purchase of existingPurchases.filter((candidate) => candidate.status === "Solicitada")) await db.update(purchaseRequests).set({ status: "Cancelada", notes: "Cancelada automáticamente: el stock fue cubierto antes de emitir la compra.", updatedAt: now }).where(eq(purchaseRequests.publicId, purchase.publicId));
-      await db.update(materialRequests).set({ status, reviewedBy: actor(session), reviewedAt: now, responseNotes: purchasePublicId ? "Stock parcial o insuficiente; se generó solicitud de compra." : "Stock reservado para entrega.", updatedAt: now }).where(eq(materialRequests.publicId, materialRequest.publicId));
+      if (!shortages.length) for (const purchase of existingPurchases.filter((candidate) => candidate.status === "Solicitada")) await db.update(purchaseRequests).set({ status: "Cancelada", notes: "Cancelada automáticamente: el stock fue cubierto antes de emitir la compra.", updatedAt: now }).where(and(eq(purchaseRequests.ownerEmail, session.ownerEmail), eq(purchaseRequests.publicId, purchase.publicId)));
+      await db.update(materialRequests).set({ status, reviewedBy: actor(session), reviewedAt: now, responseNotes: purchasePublicId ? "Stock parcial o insuficiente; se generó solicitud de compra." : "Stock reservado para entrega.", updatedAt: now }).where(and(eq(materialRequests.ownerEmail, session.ownerEmail), eq(materialRequests.publicId, materialRequest.publicId)));
       await writeAuditEvent(session, { action: "MATERIAL_REQUEST_ALLOCATED", entityType: "material_request", entityPublicId: materialRequest.publicId, detail: { warehousePublicId: warehouse.publicId, status, purchasePublicId } });
       return Response.json({ ok: true, status, purchasePublicId });
     }
@@ -202,10 +240,10 @@ export async function POST(request: Request) {
         if (!balance || n(balance.quantity) < quantity || n(balance.reservedQuantity) < quantity) return Response.json({ error: "El saldo reservado cambió; revise la bodega antes de entregar." }, { status: 409 });
         const unitCost = n(balance.averageUnitCost); const requestItem = requestItems.find((item) => item.publicId === allocation.materialRequestItemPublicId);
         await move(session, balance, { type: "ISSUE", quantity, stockAfter: n(balance.quantity) - quantity, reservedAfter: n(balance.reservedQuantity) - quantity, workOrderPublicId: materialRequest.workOrderPublicId, activityPublicId: materialRequest.activityPublicId, materialRequestPublicId: materialRequest.publicId, reason: "Entrega a orden de trabajo" });
-        await db.update(materialAllocations).set({ issuedQuantity: String(n(allocation.issuedQuantity) + quantity), reservedQuantity: "0", issueUnitCost: String(unitCost), status: "Entregada", updatedAt: now }).where(eq(materialAllocations.publicId, allocation.publicId));
-        await db.insert(workOrderCosts).values({ publicId: crypto.randomUUID(), ownerEmail: session.ownerEmail, workOrderPublicId: materialRequest.workOrderPublicId, entryDate: now.slice(0, 10), payloadJson: JSON.stringify({ entry_type: "material", description: requestItem?.description || balance.itemName, quantity, unit: requestItem?.unit || balance.unit, unit_cost: unitCost, total: quantity * unitCost, recorded_by: actor(session), source: "inventory_issue", material_request_public_id: materialRequest.publicId, allocation_public_id: allocation.publicId, recorded_at: now }) });
+        await db.update(materialAllocations).set({ issuedQuantity: String(n(allocation.issuedQuantity) + quantity), reservedQuantity: "0", issueUnitCost: String(unitCost), status: "Entregada", updatedAt: now }).where(and(eq(materialAllocations.ownerEmail, session.ownerEmail), eq(materialAllocations.publicId, allocation.publicId)));
+        await db.insert(workOrderCosts).values({ publicId: crypto.randomUUID(), ownerEmail: session.ownerEmail, workOrderPublicId: materialRequest.workOrderPublicId, entryDate: businessDate(), payloadJson: JSON.stringify({ entry_type: "material", description: requestItem?.description || balance.itemName, quantity, unit: requestItem?.unit || balance.unit, unit_cost: unitCost, total: quantity * unitCost, recorded_by: actor(session), source: "inventory_issue", material_request_public_id: materialRequest.publicId, allocation_public_id: allocation.publicId, recorded_at: now }) });
       }
-      await db.update(materialRequests).set({ status: "Entregada", reviewedBy: actor(session), reviewedAt: now, responseNotes: "Material entregado desde inventario y cargado al costo real.", updatedAt: now }).where(eq(materialRequests.publicId, materialRequest.publicId));
+      await db.update(materialRequests).set({ status: "Entregada", reviewedBy: actor(session), reviewedAt: now, responseNotes: "Material entregado desde inventario y cargado al costo real.", updatedAt: now }).where(and(eq(materialRequests.ownerEmail, session.ownerEmail), eq(materialRequests.publicId, materialRequest.publicId)));
       await writeAuditEvent(session, { action: "MATERIAL_REQUEST_ISSUED", entityType: "material_request", entityPublicId: materialRequest.publicId, detail: { allocations: allocations.length } });
       return Response.json({ ok: true });
     }
@@ -224,8 +262,8 @@ export async function POST(request: Request) {
       if (order && isWorkOrderClosed(order)) return Response.json({ error: "La orden está cerrada y no admite devoluciones que alteren su costo real." }, { status: 409 });
       const unitCost = n(allocation.issueUnitCost); const averageUnitCost = weightedAverageCost(n(balance.quantity), n(balance.averageUnitCost), input.quantity, unitCost);
       await move(session, balance, { type: "RETURN", quantity: input.quantity, stockAfter: n(balance.quantity) + input.quantity, reservedAfter: n(balance.reservedQuantity), averageUnitCost, workOrderPublicId: materialRequest.workOrderPublicId, activityPublicId: materialRequest.activityPublicId, materialRequestPublicId: materialRequest.publicId, reason: input.reason });
-      await db.update(materialAllocations).set({ returnedQuantity: String(n(allocation.returnedQuantity) + input.quantity), status: input.quantity === returnable ? "Devuelta" : "Devolución parcial", updatedAt: now }).where(eq(materialAllocations.publicId, allocation.publicId));
-      await db.insert(workOrderCosts).values({ publicId: crypto.randomUUID(), ownerEmail: session.ownerEmail, workOrderPublicId: materialRequest.workOrderPublicId, entryDate: now.slice(0, 10), payloadJson: JSON.stringify({ entry_type: "material", description: `Devolución: ${requestItem?.description || balance.itemName}`, quantity: -input.quantity, unit: requestItem?.unit || balance.unit, unit_cost: unitCost, total: -input.quantity * unitCost, recorded_by: actor(session), source: "inventory_return", material_request_public_id: materialRequest.publicId, allocation_public_id: allocation.publicId, recorded_at: now }) });
+      await db.update(materialAllocations).set({ returnedQuantity: String(n(allocation.returnedQuantity) + input.quantity), status: input.quantity === returnable ? "Devuelta" : "Devolución parcial", updatedAt: now }).where(and(eq(materialAllocations.ownerEmail, session.ownerEmail), eq(materialAllocations.publicId, allocation.publicId)));
+      await db.insert(workOrderCosts).values({ publicId: crypto.randomUUID(), ownerEmail: session.ownerEmail, workOrderPublicId: materialRequest.workOrderPublicId, entryDate: businessDate(), payloadJson: JSON.stringify({ entry_type: "material", description: `Devolución: ${requestItem?.description || balance.itemName}`, quantity: -input.quantity, unit: requestItem?.unit || balance.unit, unit_cost: unitCost, total: -input.quantity * unitCost, recorded_by: actor(session), source: "inventory_return", material_request_public_id: materialRequest.publicId, allocation_public_id: allocation.publicId, recorded_at: now }) });
       await writeAuditEvent(session, { action: "INVENTORY_RETURNED", entityType: "material_allocation", entityPublicId: allocation.publicId, detail: { quantity: input.quantity, unitCost, reason: input.reason } });
       return Response.json({ ok: true });
     }
@@ -239,8 +277,8 @@ export async function POST(request: Request) {
       const costMap = new Map(input.items.map((item) => [item.publicId, item.unitCost]));
       if (items.some((item) => !costMap.has(item.publicId))) return Response.json({ error: "Ingrese el costo unitario de todas las partidas." }, { status: 409 });
       const totals = purchaseTotals(items.map((item) => ({ quantity: n(item.quantity), unitCost: costMap.get(item.publicId) || 0 })), input.discountPercent, input.taxPercent);
-      for (const item of items) { const unitCost = costMap.get(item.publicId) || 0; await db.update(purchaseRequestItems).set({ unitCost: String(unitCost), lineTotal: String(n(item.quantity) * unitCost) }).where(eq(purchaseRequestItems.publicId, item.publicId)); }
-      await db.update(purchaseRequests).set({ supplierPublicId: supplier.publicId, supplier: supplier.name, currency: input.currency, discountPercent: String(input.discountPercent), taxPercent: String(input.taxPercent), subtotal: String(totals.subtotal), discountAmount: String(totals.discountAmount), netSubtotal: String(totals.netSubtotal), taxAmount: String(totals.taxAmount), total: String(totals.total), notes: input.notes, updatedAt: now }).where(eq(purchaseRequests.publicId, purchase.publicId));
+      for (const item of items) { const unitCost = costMap.get(item.publicId) || 0; await db.update(purchaseRequestItems).set({ unitCost: String(unitCost), lineTotal: String(n(item.quantity) * unitCost) }).where(and(eq(purchaseRequestItems.ownerEmail, session.ownerEmail), eq(purchaseRequestItems.publicId, item.publicId))); }
+      await db.update(purchaseRequests).set({ supplierPublicId: supplier.publicId, supplier: supplier.name, currency: input.currency, discountPercent: String(input.discountPercent), taxPercent: String(input.taxPercent), subtotal: String(totals.subtotal), discountAmount: String(totals.discountAmount), netSubtotal: String(totals.netSubtotal), taxAmount: String(totals.taxAmount), total: String(totals.total), notes: input.notes, updatedAt: now }).where(and(eq(purchaseRequests.ownerEmail, session.ownerEmail), eq(purchaseRequests.publicId, purchase.publicId)));
       await writeAuditEvent(session, { action: "PURCHASE_PREPARED", entityType: "purchase_request", entityPublicId: purchase.publicId, detail: { supplierPublicId: supplier.publicId, total: totals.total, currency: input.currency } });
       return Response.json({ ok: true, totals });
     }
@@ -251,7 +289,7 @@ export async function POST(request: Request) {
       if (!purchase || purchase.status !== "Solicitada" || !purchase.supplierPublicId) return Response.json({ error: "Prepare la compra y seleccione un proveedor antes de aprobarla." }, { status: 409 });
       const items = await db.select().from(purchaseRequestItems).where(and(eq(purchaseRequestItems.ownerEmail, session.ownerEmail), eq(purchaseRequestItems.purchaseRequestPublicId, purchase.publicId)));
       if (!items.length || items.some((item) => n(item.unitCost) <= 0)) return Response.json({ error: "Todas las partidas deben tener un costo unitario mayor que cero." }, { status: 409 });
-      await db.update(purchaseRequests).set({ status: "Aprobada", approvedBy: actor(session), approvedAt: now, approvalNotes: input.approvalNotes, updatedAt: now }).where(eq(purchaseRequests.publicId, purchase.publicId));
+      await db.update(purchaseRequests).set({ status: "Aprobada", approvedBy: actor(session), approvedAt: now, approvalNotes: input.approvalNotes, updatedAt: now }).where(and(eq(purchaseRequests.ownerEmail, session.ownerEmail), eq(purchaseRequests.publicId, purchase.publicId)));
       await writeAuditEvent(session, { action: "PURCHASE_APPROVED", entityType: "purchase_request", entityPublicId: purchase.publicId, detail: { total: purchase.total, currency: purchase.currency } });
       return Response.json({ ok: true });
     }
@@ -260,7 +298,7 @@ export async function POST(request: Request) {
       assertPermission(session, "purchases.manage");
       const [purchase] = await db.select().from(purchaseRequests).where(and(eq(purchaseRequests.ownerEmail, session.ownerEmail), eq(purchaseRequests.publicId, input.purchaseRequestPublicId))).limit(1);
       if (!purchase || purchase.status !== "Aprobada") return Response.json({ error: "La orden de compra debe estar aprobada antes de enviarla." }, { status: 409 });
-      await db.update(purchaseRequests).set({ status: "Ordenada", orderedBy: actor(session), orderedAt: now, updatedAt: now }).where(eq(purchaseRequests.publicId, purchase.publicId));
+      await db.update(purchaseRequests).set({ status: "Ordenada", orderedBy: actor(session), orderedAt: now, updatedAt: now }).where(and(eq(purchaseRequests.ownerEmail, session.ownerEmail), eq(purchaseRequests.publicId, purchase.publicId)));
       await writeAuditEvent(session, { action: "PURCHASE_ORDERED", entityType: "purchase_request", entityPublicId: purchase.publicId, detail: { supplier: purchase.supplier, total: purchase.total } });
       return Response.json({ ok: true });
     }
@@ -286,21 +324,22 @@ export async function POST(request: Request) {
       const reserve = Math.min(missing, quantity);
       if (reserve > 0) {
         await move(session, balance, { type: "RESERVATION", quantity: reserve, stockAfter: n(balance.quantity), reservedAfter: n(balance.reservedQuantity) + reserve, materialRequestPublicId: purchase.materialRequestPublicId, workOrderPublicId: purchase.workOrderPublicId, reason: "Reserva automática de compra recibida" });
-        if (allocation) await db.update(materialAllocations).set({ reservedQuantity: String(n(allocation.reservedQuantity) + reserve), status: n(allocation.reservedQuantity) + reserve + n(allocation.issuedQuantity) >= n(allocation.requestedQuantity) ? "Reservada" : "Parcial", updatedAt: now }).where(eq(materialAllocations.publicId, allocation.publicId));
+        if (allocation) await db.update(materialAllocations).set({ reservedQuantity: String(n(allocation.reservedQuantity) + reserve), status: n(allocation.reservedQuantity) + reserve + n(allocation.issuedQuantity) >= n(allocation.requestedQuantity) ? "Reservada" : "Parcial", updatedAt: now }).where(and(eq(materialAllocations.ownerEmail, session.ownerEmail), eq(materialAllocations.publicId, allocation.publicId)));
         else await db.insert(materialAllocations).values({ publicId: crypto.randomUUID(), ownerEmail: session.ownerEmail, materialRequestPublicId: purchase.materialRequestPublicId, materialRequestItemPublicId: requestItem.publicId, warehousePublicId: purchase.warehousePublicId, catalogItemPublicId: catalogKey, requestedQuantity: requestItem.quantity, reservedQuantity: String(reserve), issuedQuantity: "0", returnedQuantity: "0", issueUnitCost: "0", status: reserve >= n(requestItem.quantity) ? "Reservada" : "Parcial", updatedAt: now });
       }
-      await db.update(purchaseRequestItems).set({ receivedQuantity: String(n(item.receivedQuantity) + quantity) }).where(eq(purchaseRequestItems.publicId, item.publicId));
+      await db.update(purchaseRequestItems).set({ receivedQuantity: String(n(item.receivedQuantity) + quantity) }).where(and(eq(purchaseRequestItems.ownerEmail, session.ownerEmail), eq(purchaseRequestItems.publicId, item.publicId)));
     }
     const updatedItems = items.map((item) => ({ quantity: n(item.quantity), receivedQuantity: n(item.receivedQuantity) + (receiptMap.get(item.publicId) || 0) }));
     const status = purchaseReceiptStatus(updatedItems);
-    await db.update(purchaseRequests).set({ status, receivedAt: status === "Recibida" ? now : purchase.receivedAt, updatedAt: now }).where(eq(purchaseRequests.publicId, purchase.publicId));
+    await db.update(purchaseRequests).set({ status, receivedAt: status === "Recibida" ? now : purchase.receivedAt, updatedAt: now }).where(and(eq(purchaseRequests.ownerEmail, session.ownerEmail), eq(purchaseRequests.publicId, purchase.publicId)));
     const allocations = await db.select().from(materialAllocations).where(and(eq(materialAllocations.ownerEmail, session.ownerEmail), eq(materialAllocations.materialRequestPublicId, purchase.materialRequestPublicId)));
     const fullyReserved = allocations.length > 0 && allocations.every((allocation) => n(allocation.reservedQuantity) + n(allocation.issuedQuantity) >= n(allocation.requestedQuantity));
-    if (fullyReserved) await db.update(materialRequests).set({ status: "Reservada", responseNotes: "Compra recibida y stock reservado para entrega.", reviewedBy: actor(session), reviewedAt: now, updatedAt: now }).where(eq(materialRequests.publicId, purchase.materialRequestPublicId));
+    if (fullyReserved) await db.update(materialRequests).set({ status: "Reservada", responseNotes: "Compra recibida y stock reservado para entrega.", reviewedBy: actor(session), reviewedAt: now, updatedAt: now }).where(and(eq(materialRequests.ownerEmail, session.ownerEmail), eq(materialRequests.publicId, purchase.materialRequestPublicId)));
     await writeAuditEvent(session, { action: "PURCHASE_RECEIVED", entityType: "purchase_request", entityPublicId: purchase.publicId, detail: { receiptReference: input.reference, receiptLines: input.receipts.length, status, fullyReserved } });
     return Response.json({ ok: true, status, fullyReserved });
   } catch (error) {
     const auth = authorizationResponse(error); if (auth) return auth;
+    if (error instanceof InventoryConflictError) return Response.json({ error: error.message }, { status: 409 });
     const message = error instanceof z.ZodError ? "Revise las cantidades, costos, proveedor y referencias." : error instanceof Error ? error.message : "No fue posible actualizar el inventario.";
     return Response.json({ error: message }, { status: 400 });
   }

@@ -9,6 +9,16 @@ export const appSettings = sqliteTable("app_settings", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const documentSequences = sqliteTable("document_sequences", {
+  publicId: text("public_id").primaryKey(),
+  ownerEmail: text("owner_email").notNull(),
+  scope: text("scope").notNull(),
+  value: integer("value").notNull().default(0),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("document_sequences_owner_scope_uidx").on(table.ownerEmail, table.scope),
+]);
+
 export const appUsers = sqliteTable("app_users", {
   publicId: text("public_id").primaryKey(),
   ownerEmail: text("owner_email").notNull(),

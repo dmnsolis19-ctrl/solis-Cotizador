@@ -14,7 +14,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/auth", { cache: "no-store" }).then((response) => response.json()).then((data) => {
+    fetch("/api/auth", { cache: "no-store" }).then((response) => response.json() as Promise<{ needsSetup?: boolean }>).then((data) => {
       setNeedsSetup(Boolean(data.needsSetup)); setReady(true);
     }).catch(() => { setError("No fue posible comprobar el estado del acceso."); setReady(true); });
   }, []);
@@ -27,7 +27,7 @@ export default function LoginPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: String(form.get("name") || ""), email: String(form.get("email") || ""), password: String(form.get("password") || "") }),
       });
-      const result = await response.json();
+      const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error || "No fue posible continuar.");
       window.location.replace("/");
     } catch (caught) { setError(caught instanceof Error ? caught.message : "No fue posible continuar."); }

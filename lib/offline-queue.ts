@@ -1,34 +1,61 @@
 import type { SyncOperation, SyncOperationType } from "@/lib/sync-contract";
 
 const DB_NAME = "solis-cotizador-offline";
-const DB_VERSION = 1;
-const STORE = "operations";
+const DB_VERSION = 2;
+const OPERATION_STORE = "operations";
+const SNAPSHOT_STORE = "snapshots";
 const SYNC_TAG = "solis-cotizador-sync";
+const ACTIVE_SCOPE_KEY = "solis.offline.active-user.v2";
 
-export type StoredOperation = SyncOperation & { attempts: number; lastError: string };
+export type StoredOperation = SyncOperation & {
+  attempts: number;
+  lastError: string;
+  scopeUserPublicId: string;
+};
 export type QueueStatus = { pending: number; failed: number };
+type StoredSnapshot<T = unknown> = {
+  scopeUserPublicId: string;
+  savedAt: string;
+  payload: T;
+};
+
+function activeScope() {
+  return typeof window === "undefined" ? "" : localStorage.getItem(ACTIVE_SCOPE_KEY) || "";
+}
 
 function openQueue() {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
+      if (!db.objectStoreNames.contains(OPERATION_STORE)) {
+        db.createObjectStore(OPERATION_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(SNAPSHOT_STORE)) {
+        db.createObjectStore(SNAPSHOT_STORE, { keyPath: "scopeUserPublicId" });
+      }
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("No fue posible abrir la cola offline."));
+    request.onerror = () => reject(request.error || new Error("No fue posible abrir el almacenamiento offline."));
   });
 }
 
-async function withStore<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>) {
+async function withStore<T>(
+  storeName: typeof OPERATION_STORE | typeof SNAPSHOT_STORE,
+  mode: IDBTransactionMode,
+  action: (store: IDBObjectStore) => IDBRequest<T>,
+) {
   const db = await openQueue();
   return new Promise<T>((resolve, reject) => {
-    const transaction = db.transaction(STORE, mode);
-    const request = action(transaction.objectStore(STORE));
+    const transaction = db.transaction(storeName, mode);
+    const request = action(transaction.objectStore(storeName));
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("No fue posible actualizar la cola offline."));
+    request.onerror = () => reject(request.error || new Error("No fue posible actualizar el almacenamiento offline."));
     transaction.oncomplete = () => db.close();
-    transaction.onerror = () => { db.close(); reject(transaction.error || new Error("Falló la cola offline.")); };
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error || new Error("Falló el almacenamiento offline."));
+    };
   });
 }
 
@@ -41,9 +68,58 @@ async function registerBackgroundSync() {
   } catch { /* La sincronización al volver a la app sigue disponible. */ }
 }
 
+export async function activateOfflineScope(userPublicId: string) {
+  if (!userPublicId) throw new Error("No se pudo identificar al usuario para el modo offline.");
+  localStorage.setItem(ACTIVE_SCOPE_KEY, userPublicId);
+  const operations = await withStore<Array<StoredOperation & { scopeUserPublicId?: string }>>(
+    OPERATION_STORE,
+    "readonly",
+    (store) => store.getAll(),
+  );
+  for (const operation of operations.filter((item) => !item.scopeUserPublicId)) {
+    await withStore(OPERATION_STORE, "readwrite", (store) => store.put({ ...operation, scopeUserPublicId: userPublicId }));
+  }
+}
+
+export async function saveDashboardSnapshot<T>(userPublicId: string, payload: T) {
+  if (!userPublicId) return;
+  const snapshot: StoredSnapshot<T> = { scopeUserPublicId: userPublicId, savedAt: new Date().toISOString(), payload };
+  await withStore(SNAPSHOT_STORE, "readwrite", (store) => store.put(snapshot));
+}
+
+export async function loadDashboardSnapshot<T>() {
+  const scopeUserPublicId = activeScope();
+  if (!scopeUserPublicId) return null;
+  const snapshot = await withStore<StoredSnapshot<T> | undefined>(SNAPSHOT_STORE, "readonly", (store) => store.get(scopeUserPublicId));
+  return snapshot?.payload ?? null;
+}
+
+export async function clearOfflineSessionData(options: { discardPending?: boolean } = {}) {
+  const scopeUserPublicId = activeScope();
+  if (!scopeUserPublicId) return;
+  await withStore(SNAPSHOT_STORE, "readwrite", (store) => store.delete(scopeUserPublicId));
+  if (options.discardPending) {
+    const operations = await withStore<StoredOperation[]>(OPERATION_STORE, "readonly", (store) => store.getAll());
+    for (const operation of operations.filter((item) => item.scopeUserPublicId === scopeUserPublicId)) {
+      await withStore(OPERATION_STORE, "readwrite", (store) => store.delete(operation.id));
+    }
+  }
+  localStorage.removeItem(ACTIVE_SCOPE_KEY);
+}
+
 export async function enqueueOperation(type: SyncOperationType, payload: Record<string, unknown>, id = crypto.randomUUID()) {
-  const operation: StoredOperation = { id, type, payload, createdAt: new Date().toISOString(), attempts: 0, lastError: "" };
-  await withStore("readwrite", (store) => store.put(operation));
+  const scopeUserPublicId = activeScope();
+  if (!scopeUserPublicId) throw new Error("Actualice la aplicación en línea antes de guardar cambios offline.");
+  const operation: StoredOperation = {
+    id,
+    type,
+    payload,
+    createdAt: new Date().toISOString(),
+    attempts: 0,
+    lastError: "",
+    scopeUserPublicId,
+  };
+  await withStore(OPERATION_STORE, "readwrite", (store) => store.put(operation));
   await registerBackgroundSync();
   return operation;
 }
@@ -62,8 +138,12 @@ export async function migrateLegacyQuoteDraft() {
 }
 
 export async function listOperations() {
-  const operations = await withStore<StoredOperation[]>("readonly", (store) => store.getAll());
-  return operations.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const scopeUserPublicId = activeScope();
+  if (!scopeUserPublicId) return [];
+  const operations = await withStore<StoredOperation[]>(OPERATION_STORE, "readonly", (store) => store.getAll());
+  return operations
+    .filter((operation) => operation.scopeUserPublicId === scopeUserPublicId)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
 export async function getQueueStatus(): Promise<QueueStatus> {
@@ -71,12 +151,26 @@ export async function getQueueStatus(): Promise<QueueStatus> {
   return { pending: operations.length, failed: operations.filter((operation) => Boolean(operation.lastError)).length };
 }
 
+export async function discardOperation(id: string) {
+  const operation = await withStore<StoredOperation | undefined>(OPERATION_STORE, "readonly", (store) => store.get(id));
+  if (!operation || operation.scopeUserPublicId !== activeScope()) return false;
+  await withStore(OPERATION_STORE, "readwrite", (store) => store.delete(id));
+  return true;
+}
+
+export async function retryOperation(id: string) {
+  const operation = await withStore<StoredOperation | undefined>(OPERATION_STORE, "readonly", (store) => store.get(id));
+  if (!operation || operation.scopeUserPublicId !== activeScope()) return false;
+  await withStore(OPERATION_STORE, "readwrite", (store) => store.put({ ...operation, lastError: "" }));
+  return true;
+}
+
 async function removeOperation(id: string) {
-  await withStore("readwrite", (store) => store.delete(id));
+  await withStore(OPERATION_STORE, "readwrite", (store) => store.delete(id));
 }
 
 async function markFailed(operation: StoredOperation, message: string) {
-  await withStore("readwrite", (store) => store.put({ ...operation, attempts: operation.attempts + 1, lastError: message }));
+  await withStore(OPERATION_STORE, "readwrite", (store) => store.put({ ...operation, attempts: operation.attempts + 1, lastError: message }));
 }
 
 export async function sendOperation(operation: SyncOperation) {
@@ -111,7 +205,7 @@ export async function executeOrQueue(type: SyncOperationType, payload: Record<st
 export async function flushOfflineQueue() {
   const operations = await listOperations();
   let synced = 0;
-  let failed = 0;
+  let failedThisRun = 0;
   for (const operation of operations) {
     if (!navigator.onLine) break;
     try {
@@ -122,8 +216,9 @@ export async function flushOfflineQueue() {
       if (!navigator.onLine || error instanceof TypeError) break;
       const message = error instanceof Error ? error.message : "No fue posible sincronizar.";
       await markFailed(operation, message);
-      failed += 1;
+      failedThisRun += 1;
     }
   }
-  return { synced, failed, ...(await getQueueStatus()) };
+  const status = await getQueueStatus();
+  return { synced, failedThisRun, ...status };
 }

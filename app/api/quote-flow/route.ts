@@ -4,6 +4,8 @@ import { getDb } from "@/db";
 import { quoteEvents, quoteItems, quotes, workOrders } from "@/db/schema";
 import { writeAuditEvent } from "@/lib/audit";
 import { authorizationResponse, requirePermission } from "@/lib/auth";
+import { documentScope, reserveDocumentSequence } from "@/lib/sequences";
+import { businessDate, businessYear } from "@/lib/dates";
 import { canApprove, canCreateRevision, canCreateWorkOrder, canFreeze, revisionNumber } from "@/lib/workflow";
 
 const flowSchema = z.object({
@@ -58,18 +60,21 @@ export async function POST(request: Request) {
       const publicId = crypto.randomUUID();
       const number = revisionNumber(quote.number, revision);
       const now = new Date().toISOString();
-      await db.insert(quotes).values({
-        ...quote, publicId, number, rootPublicId: rootId, parentPublicId: quote.publicId, revision,
-        status: "Borrador", locked: false, lockedAt: "", approvedAt: "", approvedBy: "", approvalNotes: "",
-        payloadJson: updatePayload(quote.payloadJson, {
-          public_id: publicId, number, root_public_id: rootId, parent_public_id: quote.publicId,
-          revision, revision_reason: input.detail, status: "Borrador", locked: false,
-          locked_at: "", approved_at: "", approved_by: "", approval_notes: "",
-        }),
-        updatedAt: now,
-      });
       const items = await db.select().from(quoteItems).where(and(eq(quoteItems.ownerEmail, ownerEmail), eq(quoteItems.quotePublicId, quote.publicId))).orderBy(quoteItems.position);
-      if (items.length) await db.insert(quoteItems).values(items.map((item) => ({ ...item, publicId: `${publicId}:item:${item.position}`, quotePublicId: publicId })));
+      if (!items.length) return Response.json({ error: "La versión de origen no contiene partidas y no puede revisarse." }, { status: 409 });
+      await db.batch([
+        db.insert(quotes).values({
+          ...quote, publicId, number, rootPublicId: rootId, parentPublicId: quote.publicId, revision,
+          status: "Borrador", locked: false, lockedAt: "", approvedAt: "", approvedBy: "", approvalNotes: "",
+          payloadJson: updatePayload(quote.payloadJson, {
+            public_id: publicId, number, root_public_id: rootId, parent_public_id: quote.publicId,
+            revision, revision_reason: input.detail, status: "Borrador", locked: false,
+            locked_at: "", approved_at: "", approved_by: "", approval_notes: "",
+          }),
+          updatedAt: now,
+        }),
+        db.insert(quoteItems).values(items.map((item) => ({ ...item, publicId: `${publicId}:item:${item.position}`, quotePublicId: publicId }))),
+      ]);
       await addEvent(ownerEmail, quote.publicId, "REVISION_DERIVADA", actor, `Nueva versión ${number}.`);
       await addEvent(ownerEmail, publicId, "REVISION_CREADA", actor, input.detail);
       await writeAuditEvent(session, { action: "QUOTE_REVISION_CREATED", entityType: "quote", entityPublicId: publicId, detail: { sourcePublicId: quote.publicId, number, reason: input.detail } });
@@ -93,19 +98,20 @@ export async function POST(request: Request) {
     const existing = await db.select().from(workOrders).where(and(eq(workOrders.ownerEmail, ownerEmail), eq(workOrders.quotePublicId, quote.publicId))).limit(1);
     if (existing.length) return Response.json({ error: `Ya existe la orden ${existing[0].number}.` }, { status: 409 });
     const [{ value }] = await db.select({ value: count() }).from(workOrders).where(eq(workOrders.ownerEmail, ownerEmail));
-    const number = `SIS-OT-${new Date().getUTCFullYear()}-${String(Number(value) + 1).padStart(3, "0")}`;
+    const sequence = await reserveDocumentSequence(ownerEmail, documentScope("work_order"), Number(value));
+    const number = `SIS-OT-${businessYear()}-${String(sequence).padStart(3, "0")}`;
     const publicId = crypto.randomUUID();
     const now = new Date().toISOString();
     const payload = {
       public_id: publicId, number, quote_public_id: quote.publicId, quote_number: quote.number,
-      created_date: now.slice(0, 10), client_name: quote.clientName, project: quote.project,
+      created_date: businessDate(), client_name: quote.clientName, project: quote.project,
       status: "Pendiente", responsible: input.responsible, notes: input.detail,
       currency: quote.currency, approved_sale: quote.netSubtotal,
     };
     await db.insert(workOrders).values({
       publicId, ownerEmail, number, quotePublicId: quote.publicId, clientName: quote.clientName,
       project: quote.project, status: "Pendiente", responsible: input.responsible,
-      createdDate: now.slice(0, 10), currency: quote.currency, approvedSale: quote.netSubtotal,
+      createdDate: businessDate(), currency: quote.currency, approvedSale: quote.netSubtotal,
       notes: input.detail, payloadJson: JSON.stringify(payload), updatedAt: now,
     });
     await addEvent(ownerEmail, quote.publicId, "ORDEN_TRABAJO_CREADA", actor, number);

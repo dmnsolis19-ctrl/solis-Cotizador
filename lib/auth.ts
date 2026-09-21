@@ -1,4 +1,4 @@
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { getDb } from "@/db";
 import { appUsers, authSessions } from "@/db/schema";
@@ -24,7 +24,7 @@ export async function requireSession(): Promise<AppSession> {
   const now = new Date().toISOString();
   const [row] = await db.select({ user: appUsers, session: authSessions }).from(authSessions)
     .innerJoin(appUsers, eq(appUsers.publicId, authSessions.userPublicId))
-    .where(and(eq(authSessions.tokenHash, tokenHash), lt(now, authSessions.expiresAt))).limit(1);
+    .where(and(eq(authSessions.tokenHash, tokenHash), gt(authSessions.expiresAt, now))).limit(1);
   const user = row?.user;
   if (!user) throw new AuthorizationError("Debe iniciar sesión para usar SOLIS Cotizador.", 401);
   if (!user.active || !isAppRole(user.role)) throw new AuthorizationError("Su usuario no está habilitado en esta cuenta SOLIS.", 403);

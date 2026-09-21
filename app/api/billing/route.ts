@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { and, count, desc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
@@ -5,6 +6,8 @@ import { billingDocuments, billingPayments, quotes, workOrders } from "@/db/sche
 import { writeAuditEvent } from "@/lib/audit";
 import { authorizationResponse, requirePermission } from "@/lib/auth";
 import { BILLING_CONCEPTS, billingAmounts, collectionStatus, collectionSummary, PAYMENT_METHODS } from "@/lib/billing";
+import { documentScope, reserveDocumentSequence } from "@/lib/sequences";
+import { businessDate, businessYear } from "@/lib/dates";
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("create"), workOrderPublicId: z.string().min(8), concept: z.enum(BILLING_CONCEPTS), issueDate: z.string().length(10), dueDate: z.string().length(10), netAmount: z.number().positive().max(1_000_000_000_000), taxPercent: z.number().min(0).max(100).default(19), notes: z.string().trim().max(1000).default("") }),
@@ -68,10 +71,39 @@ export async function POST(request: Request) {
       const [quote] = await db.select({ publicId: quotes.publicId }).from(quotes).where(and(eq(quotes.ownerEmail, session.ownerEmail), eq(quotes.publicId, order.quotePublicId))).limit(1);
       if (!quote) return Response.json({ error: "No se encontró la cotización aprobada vinculada." }, { status: 409 });
       const [{ value }] = await db.select({ value: count() }).from(billingDocuments).where(eq(billingDocuments.ownerEmail, session.ownerEmail));
-      const number = `COB-${new Date().getUTCFullYear()}-${String(Number(value) + 1).padStart(5, "0")}`;
+      const sequence = await reserveDocumentSequence(session.ownerEmail, documentScope("billing"), Number(value));
+      const number = `COB-${businessYear()}-${String(sequence).padStart(5, "0")}`;
       const publicId = crypto.randomUUID();
       const amounts = billingAmounts(input.netAmount, input.taxPercent);
-      await db.insert(billingDocuments).values({ publicId, ownerEmail: session.ownerEmail, number, workOrderPublicId: order.publicId, quotePublicId: quote.publicId, clientName: order.clientName, project: order.project, concept: input.concept, status: "Borrador", currency: order.currency, issueDate: input.issueDate, dueDate: input.dueDate, netAmount: String(amounts.netAmount), taxPercent: String(input.taxPercent), taxAmount: String(amounts.taxAmount), totalAmount: String(amounts.totalAmount), notes: input.notes, createdBy: actor, createdAt: now, updatedAt: now });
+      const created = await env.DB.prepare(`
+        INSERT INTO billing_documents (
+          public_id, owner_email, number, work_order_public_id, quote_public_id,
+          client_name, project, concept, status, currency, issue_date, due_date,
+          net_amount, tax_percent, tax_amount, total_amount, notes, created_by,
+          created_at, updated_at
+        )
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM work_orders AS selected_order
+          WHERE selected_order.owner_email = ? AND selected_order.public_id = ?
+            AND ? <= CAST(selected_order.approved_sale AS REAL) - COALESCE((
+              SELECT SUM(CAST(existing.net_amount AS REAL))
+              FROM billing_documents AS existing
+              WHERE existing.owner_email = ?
+                AND existing.work_order_public_id = ?
+                AND existing.status <> 'Anulada'
+            ), 0) + 0.005
+        )
+      `).bind(
+        publicId, session.ownerEmail, number, order.publicId, quote.publicId,
+        order.clientName, order.project, input.concept, "Borrador", order.currency,
+        input.issueDate, input.dueDate, String(amounts.netAmount), String(input.taxPercent),
+        String(amounts.taxAmount), String(amounts.totalAmount), input.notes, actor, now, now,
+        session.ownerEmail, order.publicId, input.netAmount, session.ownerEmail, order.publicId,
+      ).run();
+      if (Number(created.meta.changes || 0) !== 1) {
+        return Response.json({ error: "El saldo comercial cambió en otro dispositivo. Actualice la cobranza antes de crear el documento." }, { status: 409 });
+      }
       await writeAuditEvent(session, { action: "COLLECTION_DOCUMENT_CREATED", entityType: "billing_document", entityPublicId: publicId, detail: { number, workOrderPublicId: order.publicId, concept: input.concept, ...amounts } });
       return Response.json({ ok: true, publicId, number }, { status: 201 });
     }
@@ -83,14 +115,27 @@ export async function POST(request: Request) {
 
     if (input.action === "issue") {
       if (document.status !== "Borrador") return Response.json({ error: "Solo puede emitir un documento en borrador." }, { status: 409 });
-      await db.update(billingDocuments).set({ status: "Emitida", issuedAt: now, updatedAt: now }).where(eq(billingDocuments.publicId, document.publicId));
+      const issued = await env.DB.prepare(`
+        UPDATE billing_documents SET status = 'Emitida', issued_at = ?, updated_at = ?
+        WHERE owner_email = ? AND public_id = ? AND status = 'Borrador'
+      `).bind(now, now, session.ownerEmail, document.publicId).run();
+      if (Number(issued.meta.changes || 0) !== 1) return Response.json({ error: "El documento cambió en otro dispositivo. Actualice la cobranza." }, { status: 409 });
       await writeAuditEvent(session, { action: "COLLECTION_DOCUMENT_ISSUED", entityType: "billing_document", entityPublicId: document.publicId, detail: { number: document.number, totalAmount: document.totalAmount } });
       return Response.json({ ok: true });
     }
     if (input.action === "void") {
       if (document.status === "Anulada") return Response.json({ error: "El documento ya está anulado." }, { status: 409 });
       if (paidAmount > 0) return Response.json({ error: "No puede anular un documento con pagos. Registre primero la devolución o conciliación fuera de esta etapa." }, { status: 409 });
-      await db.update(billingDocuments).set({ status: "Anulada", voidedAt: now, voidedBy: actor, voidReason: input.reason, updatedAt: now }).where(eq(billingDocuments.publicId, document.publicId));
+      const voided = await env.DB.prepare(`
+        UPDATE billing_documents SET
+          status = 'Anulada', voided_at = ?, voided_by = ?, void_reason = ?, updated_at = ?
+        WHERE owner_email = ? AND public_id = ? AND status <> 'Anulada'
+          AND NOT EXISTS (
+            SELECT 1 FROM billing_payments
+            WHERE owner_email = ? AND billing_document_public_id = ?
+          )
+      `).bind(now, actor, input.reason, now, session.ownerEmail, document.publicId, session.ownerEmail, document.publicId).run();
+      if (Number(voided.meta.changes || 0) !== 1) return Response.json({ error: "El documento cambió o ya recibió un pago. Actualice la cobranza." }, { status: 409 });
       await writeAuditEvent(session, { action: "COLLECTION_DOCUMENT_VOIDED", entityType: "billing_document", entityPublicId: document.publicId, detail: { number: document.number, reason: input.reason } });
       return Response.json({ ok: true });
     }
@@ -98,10 +143,54 @@ export async function POST(request: Request) {
     const balance = n(document.totalAmount) - paidAmount;
     if (input.amount > balance + 0.005) return Response.json({ error: `El pago supera el saldo pendiente de ${Math.max(0, balance).toFixed(2)} ${document.currency}.` }, { status: 409 });
     const publicId = crypto.randomUUID();
-    await db.insert(billingPayments).values({ publicId, ownerEmail: session.ownerEmail, billingDocumentPublicId: document.publicId, paymentDate: input.paymentDate, amount: String(input.amount), method: input.method, reference: input.reference, notes: input.notes, recordedBy: actor, createdAt: now });
-    const nextPaid = paidAmount + input.amount;
-    const status = collectionStatus({ status: "Emitida", totalAmount: n(document.totalAmount), paidAmount: nextPaid, dueDate: document.dueDate });
-    await db.update(billingDocuments).set({ status, updatedAt: now }).where(eq(billingDocuments.publicId, document.publicId));
+    const results = await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO billing_payments (
+          public_id, owner_email, billing_document_public_id, payment_date, amount,
+          method, reference, notes, recorded_by, created_at
+        )
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM billing_documents AS selected_document
+          WHERE selected_document.owner_email = ? AND selected_document.public_id = ?
+            AND selected_document.status NOT IN ('Borrador', 'Anulada')
+            AND ? + COALESCE((
+              SELECT SUM(CAST(existing.amount AS REAL))
+              FROM billing_payments AS existing
+              WHERE existing.owner_email = ?
+                AND existing.billing_document_public_id = ?
+            ), 0) <= CAST(selected_document.total_amount AS REAL) + 0.005
+        )
+      `).bind(
+        publicId, session.ownerEmail, document.publicId, input.paymentDate, String(input.amount),
+        input.method, input.reference, input.notes, actor, now,
+        session.ownerEmail, document.publicId, input.amount, session.ownerEmail, document.publicId,
+      ),
+      env.DB.prepare(`
+        UPDATE billing_documents SET
+          status = CASE
+            WHEN COALESCE((
+              SELECT SUM(CAST(payment.amount AS REAL)) FROM billing_payments AS payment
+              WHERE payment.owner_email = ? AND payment.billing_document_public_id = ?
+            ), 0) >= CAST(total_amount AS REAL) - 0.005 THEN 'Pagada'
+            WHEN due_date <> '' AND due_date < ? THEN 'Vencida'
+            ELSE 'Parcial'
+          END,
+          updated_at = ?
+        WHERE owner_email = ? AND public_id = ?
+          AND EXISTS (SELECT 1 FROM billing_payments WHERE public_id = ? AND owner_email = ?)
+      `).bind(
+        session.ownerEmail, document.publicId, businessDate(), now,
+        session.ownerEmail, document.publicId, publicId, session.ownerEmail,
+      ),
+    ]);
+    if (Number(results[0]?.meta?.changes || 0) !== 1) {
+      return Response.json({ error: "El saldo cambió en otro dispositivo o el pago supera el monto pendiente. Actualice la cobranza." }, { status: 409 });
+    }
+    const [freshDocument] = await db.select().from(billingDocuments).where(and(eq(billingDocuments.ownerEmail, session.ownerEmail), eq(billingDocuments.publicId, document.publicId))).limit(1);
+    const freshPayments = await db.select({ amount: billingPayments.amount }).from(billingPayments).where(and(eq(billingPayments.ownerEmail, session.ownerEmail), eq(billingPayments.billingDocumentPublicId, document.publicId)));
+    const nextPaid = freshPayments.reduce((sum, payment) => sum + n(payment.amount), 0);
+    const status = freshDocument?.status || "Parcial";
     await writeAuditEvent(session, { action: "PAYMENT_RECORDED", entityType: "billing_payment", entityPublicId: publicId, detail: { billingDocumentPublicId: document.publicId, number: document.number, amount: input.amount, method: input.method, reference: input.reference, balance: Math.max(0, n(document.totalAmount) - nextPaid) } });
     return Response.json({ ok: true, publicId, status });
   } catch (error) {

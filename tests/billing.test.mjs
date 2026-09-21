@@ -1,9 +1,10 @@
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test, { after } from "node:test";
 import { createServer } from "vite";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const vite = await createServer({ appType: "custom", configFile: false, root, resolve: { alias: { "@": root } }, server: { middlewareMode: true } });
 after(async () => { await vite.close(); });
 
@@ -40,6 +41,9 @@ test("keeps collection documents non-fiscal and auditable", async () => {
   assert.match(route, /billing\.payments/);
   assert.match(route, /PAYMENT_RECORDED/);
   assert.match(route, /supera el saldo comercial disponible/);
+  assert.match(route, /INSERT INTO billing_payments/);
+  assert.match(route, /selected_document\.status NOT IN \('Borrador', 'Anulada'\)/);
+  assert.match(route, /El saldo cambió en otro dispositivo/);
   const documents = await readFile(new URL("../app/api/documents/route.ts", import.meta.url), "utf8");
   assert.match(documents, /documents\.collection/);
   assert.match(documents, /buildCollectionDocumentPdf/);

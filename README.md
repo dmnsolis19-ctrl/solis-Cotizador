@@ -27,7 +27,10 @@ Las contraseñas nunca se guardan en texto visible. Las sesiones vencen a las oc
 - `npm run dev`: start the Vite/Vinext development server
 - `npm run build`: build the deployable Sites artifact
 - `npm run start`: start the built Vinext application
-- `npm test`: build and verify the rendered development-preview metadata
+- `npm run typecheck`: validate strict TypeScript types without emitting files
+- `npm run lint`: run the Next.js and TypeScript lint rules
+- `npm test`: build and run the complete automated test suite
+- `npm run check`: run types, lint, production build and tests
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
 Use build commands for targeted diagnosis after a remote failure, not as part of the normal checkpoint path.
@@ -46,6 +49,22 @@ La v3.0 incorpora rentabilidad real por orden, comparación entre costo presupue
 ## SOLIS Cotizador PWA v3.1
 
 La v3.1 agrega documentos internos de cobro, anticipos y avances, pagos parciales, vencimientos, saldos por proyecto y flujo de caja separado por moneda. Estos documentos no reemplazan los DTE tributarios del SII.
+
+## SOLIS Cotizador PWA v3.2
+
+La v3.2 prioriza el uso operativo real:
+
+- Crea y vuelve a editar cotizaciones mientras la versión permanezca en borrador.
+- Mantiene la revisión controlada: una versión enviada se congela y la siguiente nace como un borrador independiente con sus propias partidas.
+- Detecta ediciones concurrentes y evita mezclar la cabecera de una cotización con partidas guardadas desde otro dispositivo.
+- Reserva correlativos de cotización, orden de trabajo, compra y cobro mediante una secuencia atómica por cuenta, tipo y año.
+- Condiciona movimientos de inventario, cobros y pagos al saldo vigente para rechazar escrituras concurrentes u overpayments.
+- Aísla la cola IndexedDB y la copia offline del panel por usuario autenticado.
+- Incorpora una pantalla para revisar, reintentar o descartar operaciones offline con error.
+- Conserva el shell autenticado para navegación sin red, no almacena respuestas API ni la pantalla de acceso y purga la copia privada al cerrar sesión.
+- Usa la fecha operacional de Chile (`America/Santiago`) en vez de derivarla desde UTC.
+- Añade la migración `0014_pretty_emma_frost.sql` para `document_sequences`.
+- Actualiza Next.js y agrega comprobación estricta de tipos, lint, compilación y pruebas.
 
 Esta aplicación ejecuta la interfaz y sus rutas API en Cloudflare Workers, conserva los datos estructurados en D1 y guarda documentos, evidencias y firmas en R2. Incluye clientes, biblioteca de precios, cálculo económico, migración `solis.cotizador.v1`, revisiones, aprobación, asignación y ejecución de órdenes.
 

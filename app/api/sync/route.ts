@@ -5,7 +5,7 @@ import { authorizationResponse, requirePermission } from "@/lib/auth";
 import { syncOperationSchema } from "@/lib/sync-contract";
 import { POST as createClient } from "@/app/api/clients/route";
 import { POST as createCatalogItem } from "@/app/api/catalog/route";
-import { POST as createQuote } from "@/app/api/quotes/route";
+import { PATCH as updateQuote, POST as createQuote } from "@/app/api/quotes/route";
 import { PATCH as updateOrder } from "@/app/api/orders/route";
 import { POST as updateExecution } from "@/app/api/order-execution/route";
 import { POST as createMaterialRequest } from "@/app/api/material-requests/route";
@@ -23,6 +23,7 @@ export async function POST(request: Request) {
       "client.create": "clients.write",
       "catalog.create": "catalog.write",
       "quote.create": "quotes.write",
+      "quote.update": "quotes.write",
       "order.update": "orders.write",
       "activity.create": "orders.execute",
       "activity.update": "orders.execute",
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
       "client.create": createClient,
       "catalog.create": createCatalogItem,
       "quote.create": createQuote,
+      "quote.update": updateQuote,
       "order.update": updateOrder,
       "activity.create": updateExecution,
       "activity.update": updateExecution,
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
       "material_request.create": createMaterialRequest,
     } as const)[operation.type];
     const forwarded = new Request(request.url, {
-      method: operation.type === "order.update" ? "PATCH" : "POST",
+      method: operation.type === "order.update" || operation.type === "quote.update" ? "PATCH" : "POST",
       headers: request.headers,
       body: JSON.stringify(operation.payload),
     });

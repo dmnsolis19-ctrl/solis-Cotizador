@@ -1,1 +1,3 @@
-﻿export default {};
+const manifest = {};
+
+export default manifest;

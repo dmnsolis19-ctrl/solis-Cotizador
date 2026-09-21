@@ -51,6 +51,16 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -97,15 +107,23 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  activateOfflineScope,
+  clearOfflineSessionData,
+  discardOperation,
   executeOrQueue,
   flushOfflineQueue,
   getQueueStatus,
   listOperations,
+  loadDashboardSnapshot,
   migrateLegacyQuoteDraft,
+  retryOperation,
+  saveDashboardSnapshot,
   type QueueStatus,
   type StoredOperation,
 } from "@/lib/offline-queue";
+import { syncOperationLabel } from "@/lib/sync-contract";
 import { calculateQuote, type QuoteLine } from "@/lib/pricing";
+import { businessDate } from "@/lib/dates";
 import {
   EXECUTION_ENTRY_TYPES,
   executionMetrics,
@@ -154,6 +172,7 @@ type Quote = {
   number: string;
   rootPublicId: string;
   parentPublicId: string;
+  clientPublicId: string;
   clientName: string;
   project: string;
   issueDate: string;
@@ -170,6 +189,23 @@ type Quote = {
   approvedAt: string;
   approvedBy: string;
   approvalNotes: string;
+  updatedAt: string;
+};
+type QuoteDetail = {
+  quote: Quote;
+  items: QuoteLine[];
+  commercial: {
+    taxPercent: number;
+    overheadPercent: number;
+    contingencyPercent: number;
+    targetMarginPercent: number;
+    discountPercent: number;
+    roundingMultiple: number;
+    validityDays: number;
+    paymentTerms: string;
+    deliveryTerms: string;
+    notes: string;
+  };
 };
 type WorkOrder = {
   publicId: string;
@@ -348,7 +384,7 @@ const EMPTY_DATA: DashboardData = {
     ],
   },
 };
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => businessDate();
 const numberValue = (value: unknown, fallback: number) =>
   Number.isFinite(Number(value)) ? Number(value) : fallback;
 const money = (value: unknown, currency = "CLP") =>
@@ -445,7 +481,7 @@ function overlayPendingOperations(
         ),
         item,
       ];
-    } else if (operation.type === "quote.create") {
+    } else if (operation.type === "quote.create" || operation.type === "quote.update") {
       const lines = Array.isArray(payload.items)
         ? (payload.items as QuoteLine[])
         : [];
@@ -458,11 +494,13 @@ function overlayPendingOperations(
         roundingMultiple: numberValue(payload.roundingMultiple, 1000),
       });
       const publicId = String(payload.publicId);
+      const existingQuote = next.quotes.find((entry) => entry.publicId === publicId);
       const quote: Quote = {
         publicId,
-        number: `Pendiente · ${publicId.slice(0, 8)}`,
-        rootPublicId: publicId,
-        parentPublicId: "",
+        number: existingQuote?.number || `Pendiente · ${publicId.slice(0, 8)}`,
+        rootPublicId: existingQuote?.rootPublicId || publicId,
+        parentPublicId: existingQuote?.parentPublicId || "",
+        clientPublicId: String(payload.clientPublicId || existingQuote?.clientPublicId || ""),
         clientName: String(payload.clientName || "Cliente"),
         project: String(payload.project || "Proyecto"),
         issueDate: String(payload.issueDate || today()),
@@ -473,12 +511,13 @@ function overlayPendingOperations(
         internalCost: String(calculated.internalCost),
         estimatedProfit: String(calculated.estimatedProfit),
         marginPercent: String(calculated.marginPercent),
-        revision: 0,
+        revision: existingQuote?.revision || 0,
         locked: false,
         lockedAt: "",
         approvedAt: "",
         approvedBy: "",
         approvalNotes: "",
+        updatedAt: String(payload.expectedUpdatedAt || existingQuote?.updatedAt || operation.createdAt),
       };
       next.quotes = [
         quote,
@@ -511,6 +550,7 @@ export default function CotizadorApp() {
   const [clientOpen, setClientOpen] = useState(false);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
+  const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<WorkOrder | null>(null);
   const [usersData, setUsersData] = useState<AppUser[]>([]);
@@ -529,6 +569,8 @@ export default function CotizadorApp() {
     pending: 0,
     failed: 0,
   });
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [queueOperations, setQueueOperations] = useState<StoredOperation[]>([]);
   const syncingRef = useRef(false);
   const importRef = useRef<HTMLInputElement>(null);
   const can = useCallback(
@@ -539,11 +581,12 @@ export default function CotizadorApp() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [serverData, operations] = await Promise.all([
-        api<DashboardData>("/api/dashboard"),
-        listOperations(),
-      ]);
+      const serverData = await api<DashboardData>("/api/dashboard");
+      await activateOfflineScope(serverData.session.user.publicId);
+      await migrateLegacyQuoteDraft();
+      const operations = await listOperations();
       setData(overlayPendingOperations(serverData, operations));
+      await saveDashboardSnapshot(serverData.session.user.publicId, serverData).catch(() => undefined);
       if (serverData.session.permissions.includes("notifications.read")) {
         const notificationData = await api<{ notifications: UserNotification[]; unreadCount: number }>("/api/notifications").catch(() => null);
         if (notificationData) {
@@ -554,8 +597,11 @@ export default function CotizadorApp() {
       setOnline(navigator.onLine);
       setAccessError("");
     } catch (error) {
-      const operations = await listOperations().catch(() => []);
-      setData((current) => overlayPendingOperations(current, operations));
+      const [snapshot, operations] = await Promise.all([
+        loadDashboardSnapshot<DashboardData>().catch(() => null),
+        listOperations().catch(() => []),
+      ]);
+      setData((current) => overlayPendingOperations(snapshot || current, operations));
       setOnline(navigator.onLine);
       const status = Number((error as { status?: number })?.status || 0);
       if (status === 401 || status === 403)
@@ -570,6 +616,18 @@ export default function CotizadorApp() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const logout = useCallback(async () => {
+    const status = await getQueueStatus().catch(() => ({ pending: 0, failed: 0 }));
+    if (status.pending) {
+      toast.error("Sincronice o descarte los cambios pendientes antes de cerrar sesión.");
+      return;
+    }
+    await fetch("/api/auth", { method: "DELETE" });
+    await clearOfflineSessionData();
+    navigator.serviceWorker?.controller?.postMessage({ type: "SOLIS_CLEAR_PRIVATE_CACHE" });
+    window.location.replace("/login");
   }, []);
 
   const refreshAssignableUsers = useCallback(async () => {
@@ -640,10 +698,33 @@ export default function CotizadorApp() {
     [refresh],
   );
 
+  const openQueueDialog = useCallback(async () => {
+    setQueueOperations(await listOperations().catch(() => []));
+    setQueueOpen(true);
+  }, []);
+
+  const discardQueuedOperation = useCallback(async (id: string) => {
+    await discardOperation(id);
+    const operations = await listOperations();
+    setQueueOperations(operations);
+    setQueueStatus({ pending: operations.length, failed: operations.filter((item) => Boolean(item.lastError)).length });
+    await refresh();
+  }, [refresh]);
+
+  const retryQueuedOperation = useCallback(async (id: string) => {
+    await retryOperation(id);
+    await syncNow(true);
+    setQueueOperations(await listOperations());
+  }, [syncNow]);
+
+  const syncQueueFromDialog = useCallback(async () => {
+    await syncNow(true);
+    setQueueOperations(await listOperations());
+  }, [syncNow]);
+
   useEffect(() => {
     const initialRefresh = window.setTimeout(() => {
       void (async () => {
-        await migrateLegacyQuoteDraft();
         await updateQueueStatus();
         await refresh();
         if (navigator.onLine) await syncNow();
@@ -889,7 +970,7 @@ export default function CotizadorApp() {
               <div className="text-sm font-bold tracking-wide">
                 {companyName}
               </div>
-              <div className="text-xs text-slate-400">Cotizador PWA · v3.1</div>
+              <div className="text-xs text-slate-400">Cotizador PWA · v3.2</div>
             </div>
           </div>
         </SidebarHeader>
@@ -934,10 +1015,7 @@ export default function CotizadorApp() {
           <Button
             variant="ghost"
             className="mb-3 w-full justify-start text-slate-300 hover:bg-white/10 hover:text-white"
-            onClick={async () => {
-              await fetch("/api/auth", { method: "DELETE" });
-              window.location.replace("/login");
-            }}
+            onClick={() => void logout()}
           >
             <LogOut /> Cerrar sesión
           </Button>
@@ -974,6 +1052,15 @@ export default function CotizadorApp() {
                 Sincronizar ahora
               </Button>
             )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void openQueueDialog()}
+              className="mt-1 h-7 w-full justify-start px-2 text-xs text-slate-300 hover:bg-white/10 hover:text-white"
+            >
+              <ListChecks /> Revisar cola offline
+            </Button>
             <div className="mt-2 text-slate-500">
               Cola persistente · IndexedDB
             </div>
@@ -1042,7 +1129,7 @@ export default function CotizadorApp() {
             </Button>
             {can("quotes.write") && (
               <Button
-                onClick={() => setQuoteOpen(true)}
+                onClick={() => { setEditingQuote(null); setQuoteOpen(true); }}
                 className="bg-amber-400 text-slate-950 hover:bg-amber-300"
               >
                 <Plus />
@@ -1062,7 +1149,7 @@ export default function CotizadorApp() {
               totalQuoted={totalQuoted}
               pending={pending}
               onSection={setSection}
-              onNewQuote={() => setQuoteOpen(true)}
+              onNewQuote={() => { setEditingQuote(null); setQuoteOpen(true); }}
               onImport={() => importRef.current?.click()}
               importing={importing}
               canCreateQuote={can("quotes.write")}
@@ -1139,6 +1226,7 @@ export default function CotizadorApp() {
                       ? setSelectedQuote
                       : undefined
                   }
+                  onEdit={can("quotes.write") ? (quote) => { setEditingQuote(quote); setQuoteOpen(true); } : undefined}
                 />
               )}
               {section === "clients" && (
@@ -1187,10 +1275,14 @@ export default function CotizadorApp() {
       )}
       {can("quotes.write") && (
         <QuoteDialog
-          key={`quote-${String(data.economicSettings.discount_percent ?? 0)}`}
+          key={`quote-${editingQuote?.publicId || "new"}-${String(data.economicSettings.discount_percent ?? 0)}`}
           open={quoteOpen}
-          onOpenChange={setQuoteOpen}
+          onOpenChange={(open) => {
+            setQuoteOpen(open);
+            if (!open) setEditingQuote(null);
+          }}
           data={data}
+          quote={editingQuote}
           online={online}
           onSaved={() => {
             refresh();
@@ -1212,6 +1304,11 @@ export default function CotizadorApp() {
         canFlow={can("quotes.flow")}
         canApprove={can("quotes.approve")}
         canDocument={can("documents.quote")}
+        onEdit={(quote) => {
+          setSelectedQuote(null);
+          setEditingQuote(quote);
+          setQuoteOpen(true);
+        }}
         onOpenChange={(open) => {
           if (!open) setSelectedQuote(null);
         }}
@@ -1251,6 +1348,16 @@ export default function CotizadorApp() {
             }
           }
         }}
+      />
+      <QueueDialog
+        open={queueOpen}
+        operations={queueOperations}
+        online={online}
+        syncing={syncing}
+        onOpenChange={setQueueOpen}
+        onRetry={(id) => void retryQueuedOperation(id)}
+        onDiscard={(id) => void discardQueuedOperation(id)}
+        onSync={() => void syncQueueFromDialog()}
       />
       <UserDialog
         key={selectedUser?.publicId || "new-user"}
@@ -1397,7 +1504,7 @@ function Dashboard({
         <div className="relative flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
           <div>
             <Badge className="mb-3 bg-amber-400 text-slate-950">
-              PWA v3.1 · Cobranza y flujo de caja
+              PWA v3.2 · Cotizaciones y operación offline
             </Badge>
             <h1 className="max-w-2xl text-2xl font-bold tracking-tight md:text-3xl">
               Del presupuesto aprobado a la evidencia real del trabajo ejecutado.
@@ -1534,10 +1641,12 @@ function QuotesTable({
   quotes,
   compact = false,
   onManage,
+  onEdit,
 }: {
   quotes: Quote[];
   compact?: boolean;
   onManage?: (quote: Quote) => void;
+  onEdit?: (quote: Quote) => void;
 }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-white">
@@ -1595,13 +1704,18 @@ function QuotesTable({
                 </TableCell>
                 {!compact && (
                   <TableCell className="text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onManage?.(q)}
-                    >
-                      Gestionar
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      {onEdit && !q.locked && q.status === "Borrador" && (
+                        <Button variant="outline" size="sm" onClick={() => onEdit(q)}>
+                          <PenLine /> Editar
+                        </Button>
+                      )}
+                      {onManage && (
+                        <Button variant="outline" size="sm" onClick={() => onManage(q)}>
+                          Gestionar
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 )}
               </TableRow>
@@ -2337,6 +2451,7 @@ function QuoteDialog({
   open,
   onOpenChange,
   data,
+  quote,
   online,
   onSaved,
   onQueued,
@@ -2344,6 +2459,7 @@ function QuoteDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   data: DashboardData;
+  quote: Quote | null;
   online: boolean;
   onSaved: () => void;
   onQueued: () => void;
@@ -2351,23 +2467,88 @@ function QuoteDialog({
   const settings = data.economicSettings;
   const [clientId, setClientId] = useState("");
   const [project, setProject] = useState("");
+  const [issueDate, setIssueDate] = useState(today());
   const [quoteCurrency, setQuoteCurrency] = useState("CLP");
   const [lines, setLines] = useState<QuoteLine[]>([]);
   const [catalogId, setCatalogId] = useState("");
   const [saving, setSaving] = useState(false);
-  const [discount, setDiscount] = useState(() =>
-    numberValue(settings.discount_percent, 0),
-  );
+  const [loadingDetails, setLoadingDetails] = useState(Boolean(quote));
+  const [discount, setDiscount] = useState(() => numberValue(settings.discount_percent, 0));
+  const [taxPercent, setTaxPercent] = useState(19);
+  const [overheadPercent, setOverheadPercent] = useState(() => numberValue(settings.overhead_percent, 10));
+  const [contingencyPercent, setContingencyPercent] = useState(() => numberValue(settings.contingency_percent, 5));
+  const [targetMarginPercent, setTargetMarginPercent] = useState(() => numberValue(settings.target_margin_percent, 25));
+  const [roundingMultiple, setRoundingMultiple] = useState(() => numberValue(settings.rounding_multiple, 1000));
+  const [validityDays, setValidityDays] = useState(20);
+  const [paymentTerms, setPaymentTerms] = useState("50% anticipo / 50% contra entrega");
+  const [deliveryTerms, setDeliveryTerms] = useState("Por definir");
+  const [notes, setNotes] = useState("");
   const client = data.clients.find((item) => item.publicId === clientId);
   const economic = {
-    overheadPercent: numberValue(settings.overhead_percent, 10),
-    contingencyPercent: numberValue(settings.contingency_percent, 5),
-    targetMarginPercent: numberValue(settings.target_margin_percent, 25),
+    overheadPercent,
+    contingencyPercent,
+    targetMarginPercent,
     discountPercent: discount,
-    taxPercent: 19,
-    roundingMultiple: numberValue(settings.rounding_multiple, 1000),
+    taxPercent,
+    roundingMultiple,
   };
   const calculated = calculateQuote(lines, economic);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      setLoadingDetails(Boolean(quote));
+      if (!quote) {
+        await Promise.resolve();
+        if (cancelled) return;
+        setClientId("");
+        setProject("");
+        setIssueDate(today());
+        setQuoteCurrency("CLP");
+        setLines([]);
+        setDiscount(numberValue(settings.discount_percent, 0));
+        setTaxPercent(19);
+        setOverheadPercent(numberValue(settings.overhead_percent, 10));
+        setContingencyPercent(numberValue(settings.contingency_percent, 5));
+        setTargetMarginPercent(numberValue(settings.target_margin_percent, 25));
+        setRoundingMultiple(numberValue(settings.rounding_multiple, 1000));
+        setValidityDays(20);
+        setPaymentTerms("50% anticipo / 50% contra entrega");
+        setDeliveryTerms("Por definir");
+        setNotes("");
+        setLoadingDetails(false);
+        return;
+      }
+      try {
+        const detail = await api<QuoteDetail>(`/api/quotes?publicId=${encodeURIComponent(quote.publicId)}`);
+        if (cancelled) return;
+        setClientId(detail.quote.clientPublicId || "");
+        setProject(detail.quote.project);
+        setIssueDate(detail.quote.issueDate);
+        setQuoteCurrency(detail.quote.currency);
+        setLines(detail.items);
+        setDiscount(detail.commercial.discountPercent);
+        setTaxPercent(detail.commercial.taxPercent);
+        setOverheadPercent(detail.commercial.overheadPercent);
+        setContingencyPercent(detail.commercial.contingencyPercent);
+        setTargetMarginPercent(detail.commercial.targetMarginPercent);
+        setRoundingMultiple(detail.commercial.roundingMultiple);
+        setValidityDays(detail.commercial.validityDays);
+        setPaymentTerms(detail.commercial.paymentTerms);
+        setDeliveryTerms(detail.commercial.deliveryTerms);
+        setNotes(detail.commercial.notes);
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(error instanceof Error ? error.message : "No fue posible cargar el borrador.");
+          onOpenChange(false);
+        }
+      } finally {
+        if (!cancelled) setLoadingDetails(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, quote, settings, onOpenChange]);
   const addCatalog = () => {
     const item = data.catalogItems.find(
       (entry) => entry.publicId === catalogId,
@@ -2392,34 +2573,42 @@ function QuoteDialog({
     ]);
     setCatalogId("");
   };
+  const addManualLine = () => {
+    setLines((current) => [...current, { name: "Nueva partida", detail: "", quantity: 1, unit: "un", unitCost: 0, unitPrice: 0 }]);
+  };
+  const updateLine = (index: number, changes: Partial<QuoteLine>) => {
+    setLines((current) => current.map((item, position) => position === index ? { ...item, ...changes } : item));
+  };
   const save = async () => {
     if (!client || !project.trim() || !lines.length) {
       toast.error("Seleccione cliente, proyecto y al menos una partida.");
       return;
     }
     const payload = {
-      publicId: crypto.randomUUID(),
+      publicId: quote?.publicId || crypto.randomUUID(),
+      ...(quote ? { expectedUpdatedAt: quote.updatedAt } : {}),
       clientPublicId: client.publicId,
       clientName: client.name,
       project,
-      issueDate: today(),
+      issueDate,
       currency: quoteCurrency,
       ...economic,
-      validityDays: 20,
-      paymentTerms: "50% anticipo / 50% contra entrega",
-      deliveryTerms: "Por definir",
+      validityDays,
+      paymentTerms,
+      deliveryTerms,
+      notes,
       items: lines,
     };
     setSaving(true);
     try {
-      const result = await executeOrQueue("quote.create", payload);
+      const result = await executeOrQueue(quote ? "quote.update" : "quote.create", payload);
       if (result.queued) {
         toast.warning(
-          "Cotización guardada en la cola offline; recibirá su número al sincronizar.",
+          quote ? "Edición guardada en la cola offline." : "Cotización guardada en la cola offline; recibirá su número al sincronizar.",
         );
         onQueued();
       } else {
-        toast.success("Cotización guardada en la base compartida.");
+        toast.success(quote ? "Borrador actualizado." : "Cotización guardada en la base compartida.");
         onSaved();
       }
       setLines([]);
@@ -2436,12 +2625,13 @@ function QuoteDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Nueva cotización</DialogTitle>
+          <DialogTitle>{quote ? `Editar ${quote.number}` : "Nueva cotización"}</DialogTitle>
           <DialogDescription>
-            Los valores azules son internos; no se mostrarán al cliente.
+            {quote ? "Los cambios conservan el número y la trazabilidad de esta revisión." : "Los valores azules son internos; no se mostrarán al cliente."}
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 md:grid-cols-[1fr_1fr_130px]">
+        {loadingDetails ? <div className="flex items-center justify-center gap-2 py-16 text-sm text-slate-500"><Loader2 className="animate-spin" /> Cargando borrador…</div> : <>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1fr_1fr_130px_150px]">
           <div className="space-y-2">
             <Label>Cliente</Label>
             <select
@@ -2479,6 +2669,7 @@ function QuoteDialog({
               ))}
             </select>
           </div>
+          <FieldControlled label="Fecha de emisión" value={issueDate} onChange={setIssueDate} type="date" />
         </div>
         <div className="rounded-xl border bg-slate-50 p-4">
           <div className="mb-3 flex flex-col gap-2 sm:flex-row">
@@ -2502,15 +2693,21 @@ function QuoteDialog({
             >
               <PackagePlus /> Agregar partida
             </Button>
+            <Button type="button" variant="outline" onClick={addManualLine}>
+              <Plus /> Partida manual
+            </Button>
           </div>
           {lines.length ? (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Partida</TableHead>
+                  <TableHead className="min-w-64">Partida</TableHead>
                   <TableHead>Cant.</TableHead>
-                  <TableHead className="text-right">Costo</TableHead>
-                  <TableHead className="text-right">Venta</TableHead>
+                  <TableHead>Unidad</TableHead>
+                  <TableHead>Costo unit.</TableHead>
+                  <TableHead>Venta unit.</TableHead>
+                  <TableHead className="text-right">Subtotal</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -2518,8 +2715,19 @@ function QuoteDialog({
                 {lines.map((line, index) => (
                   <TableRow key={`${line.name}-${index}`}>
                     <TableCell>
-                      <div className="font-medium">{line.name}</div>
-                      <div className="text-xs text-slate-500">{line.unit}</div>
+                      <Input
+                        value={line.name}
+                        onChange={(event) => updateLine(index, { name: event.target.value })}
+                        className="min-w-56 bg-white font-medium"
+                        aria-label={`Nombre de partida ${index + 1}`}
+                      />
+                      <Input
+                        value={line.detail || ""}
+                        onChange={(event) => updateLine(index, { detail: event.target.value })}
+                        className="mt-2 min-w-56 bg-white text-xs"
+                        placeholder="Descripción o alcance"
+                        aria-label={`Detalle de partida ${index + 1}`}
+                      />
                     </TableCell>
                     <TableCell>
                       <Input
@@ -2527,20 +2735,18 @@ function QuoteDialog({
                         min="0.01"
                         step="0.01"
                         value={line.quantity}
-                        onChange={(e) =>
-                          setLines((current) =>
-                            current.map((item, p) =>
-                              p === index
-                                ? { ...item, quantity: Number(e.target.value) }
-                                : item,
-                            ),
-                          )
-                        }
+                        onChange={(e) => updateLine(index, { quantity: Number(e.target.value) })}
                         className="w-20 bg-white"
                       />
                     </TableCell>
-                    <TableCell className="bg-blue-50 text-right text-blue-800">
-                      {money(line.quantity * line.unitCost, quoteCurrency)}
+                    <TableCell>
+                      <Input value={line.unit} onChange={(event) => updateLine(index, { unit: event.target.value })} className="w-20 bg-white" aria-label={`Unidad de partida ${index + 1}`} />
+                    </TableCell>
+                    <TableCell className="bg-blue-50 text-blue-800">
+                      <Input type="number" min="0" step="0.01" value={line.unitCost} onChange={(event) => updateLine(index, { unitCost: Number(event.target.value) })} className="w-32 bg-white" aria-label={`Costo unitario de partida ${index + 1}`} />
+                    </TableCell>
+                    <TableCell>
+                      <Input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(index, { unitPrice: Number(event.target.value) })} className="w-32 bg-white" aria-label={`Precio unitario de partida ${index + 1}`} />
                     </TableCell>
                     <TableCell className="text-right font-medium">
                       {money(line.quantity * line.unitPrice, quoteCurrency)}
@@ -2563,6 +2769,7 @@ function QuoteDialog({
                 ))}
               </TableBody>
             </Table>
+            </div>
           ) : (
             <div className="py-8 text-center text-sm text-slate-500">
               Agregue partidas desde la biblioteca de precios.
@@ -2613,6 +2820,25 @@ function QuoteDialog({
             </div>
           </div>
         </div>
+        <Card className="border-slate-200 bg-slate-50/70">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Condiciones y cálculo comercial</CardTitle>
+            <CardDescription>Estos parámetros quedan congelados con cada versión de la cotización.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <FieldControlled label="IVA (%)" value={String(taxPercent)} onChange={(value) => setTaxPercent(Number(value))} type="number" />
+            <FieldControlled label="Gastos generales (%)" value={String(overheadPercent)} onChange={(value) => setOverheadPercent(Number(value))} type="number" />
+            <FieldControlled label="Contingencia (%)" value={String(contingencyPercent)} onChange={(value) => setContingencyPercent(Number(value))} type="number" />
+            <FieldControlled label="Margen objetivo (%)" value={String(targetMarginPercent)} onChange={(value) => setTargetMarginPercent(Number(value))} type="number" />
+            <FieldControlled label="Redondeo" value={String(roundingMultiple)} onChange={(value) => setRoundingMultiple(Number(value))} type="number" />
+            <FieldControlled label="Validez (días)" value={String(validityDays)} onChange={(value) => setValidityDays(Number(value))} type="number" />
+            <div className="sm:col-span-2 lg:col-span-3 grid gap-4 md:grid-cols-2">
+              <div className="space-y-2"><Label>Condición de pago</Label><textarea value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} className="min-h-20 w-full rounded-md border bg-white px-3 py-2 text-sm" /></div>
+              <div className="space-y-2"><Label>Plazo o condición de entrega</Label><textarea value={deliveryTerms} onChange={(event) => setDeliveryTerms(event.target.value)} className="min-h-20 w-full rounded-md border bg-white px-3 py-2 text-sm" /></div>
+            </div>
+            <div className="space-y-2 sm:col-span-2 lg:col-span-3"><Label>Observaciones comerciales</Label><textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 w-full rounded-md border bg-white px-3 py-2 text-sm" /></div>
+          </CardContent>
+        </Card>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
@@ -2629,9 +2855,10 @@ function QuoteDialog({
             ) : (
               <Smartphone />
             )}
-            {online ? "Guardar cotización" : "Guardar para sincronizar"}
+            {online ? (quote ? "Actualizar borrador" : "Guardar cotización") : "Guardar para sincronizar"}
           </Button>
         </DialogFooter>
+        </>}
       </DialogContent>
     </Dialog>
   );
@@ -2644,6 +2871,7 @@ function QuoteFlowDialog({
   canFlow,
   canApprove,
   canDocument,
+  onEdit,
   onOpenChange,
   onSaved,
 }: {
@@ -2653,6 +2881,7 @@ function QuoteFlowDialog({
   canFlow: boolean;
   canApprove: boolean;
   canDocument: boolean;
+  onEdit: (quote: Quote) => void;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }) {
@@ -2751,6 +2980,15 @@ function QuoteFlowDialog({
               </div>
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
+              {canFlow && !quote.locked && quote.status === "Borrador" && (
+                <ActionButton
+                  icon={PenLine}
+                  title="Editar borrador"
+                  note="Modifique partidas y condiciones antes de congelar."
+                  working={false}
+                  onClick={() => onEdit(quote)}
+                />
+              )}
               {canFlow && !quote.locked && (
                 <ActionButton
                   icon={LockKeyhole}
@@ -2889,6 +3127,116 @@ function NotificationDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function QueueDialog({
+  open,
+  operations,
+  online,
+  syncing,
+  onOpenChange,
+  onRetry,
+  onDiscard,
+  onSync,
+}: {
+  open: boolean;
+  operations: StoredOperation[];
+  online: boolean;
+  syncing: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRetry: (id: string) => void;
+  onDiscard: (id: string) => void;
+  onSync: () => void;
+}) {
+  const [discarding, setDiscarding] = useState<StoredOperation | null>(null);
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ListChecks className="size-5 text-amber-600" /> Cola de trabajo offline
+            </DialogTitle>
+            <DialogDescription>
+              Cambios guardados en este dispositivo para el usuario actual. Los elementos con error pueden reintentarse o descartarse.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {operations.length ? operations.map((operation) => (
+              <div key={operation.id} className="rounded-xl border bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">
+                      {syncOperationLabel(operation.type)}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {new Date(operation.createdAt).toLocaleString("es-CL")} · {operation.attempts} intento{operation.attempts === 1 ? "" : "s"}
+                    </div>
+                    {operation.lastError && (
+                      <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                        {operation.lastError}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!online || syncing}
+                      onClick={() => onRetry(operation.id)}
+                    >
+                      <RotateCcw /> Reintentar
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setDiscarding(operation)}
+                    >
+                      Descartar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )) : (
+              <div className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">
+                No hay cambios pendientes para este usuario.
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cerrar</Button>
+            <Button disabled={!online || syncing || !operations.length} onClick={onSync}>
+              <RefreshCw className={syncing ? "animate-spin" : ""} /> Sincronizar todo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog open={Boolean(discarding)} onOpenChange={(next) => { if (!next) setDiscarding(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Descartar este cambio pendiente?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará del dispositivo y no se enviará al servidor. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (discarding) onDiscard(discarding.id);
+                setDiscarding(null);
+              }}
+            >
+              Descartar cambio
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -3839,7 +4187,7 @@ function BillingPanel({ online, actor }: { online: boolean; actor: string }) {
   const [workOrderPublicId, setWorkOrderPublicId] = useState("");
   const [concept, setConcept] = useState<(typeof BILLING_CONCEPT_OPTIONS)[number]>("Anticipo");
   const [issueDate, setIssueDate] = useState(today());
-  const [dueDate, setDueDate] = useState(() => { const date = new Date(); date.setUTCDate(date.getUTCDate() + 15); return date.toISOString().slice(0, 10); });
+  const [dueDate, setDueDate] = useState(() => { const date = new Date(); date.setDate(date.getDate() + 15); return businessDate(date); });
   const [netAmount, setNetAmount] = useState(0);
   const [taxPercent, setTaxPercent] = useState(19);
   const [notes, setNotes] = useState("");

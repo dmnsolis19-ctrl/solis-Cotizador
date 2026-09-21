@@ -25,6 +25,8 @@ Antes de la primera publicación, aplique las migraciones en orden:
 npx.cmd wrangler d1 migrations apply DB --remote --config wrangler.production.jsonc
 ```
 
+Al actualizar desde v3.1, ese mismo comando aplica `0014_pretty_emma_frost.sql`. La tabla nueva mantiene correlativos atómicos separados por cuenta, tipo de documento y año. Aplique la migración antes de publicar el Worker v3.2.
+
 En Windows PowerShell, use el script incluido. Compila con Vinext, actualiza la configuración generada por Vinext con los bindings reales y publica el Worker:
 
 ```bash
@@ -39,11 +41,11 @@ La tabla `document_snapshots` conserva versión, propietario, entidad de origen,
 
 ## Sincronización offline
 
-El dispositivo guarda temporalmente las operaciones pendientes en IndexedDB. Cuando regresa la conexión, `/api/sync` procesa clientes, ítems de biblioteca, cotizaciones y actualizaciones de órdenes. La tabla `sync_receipts` conserva el UUID de operación, tipo, propietario, huella del contenido y resultado. Un reintento con el mismo UUID y contenido devuelve el resultado anterior; reutilizar el UUID con otros datos se rechaza.
+El dispositivo guarda temporalmente las operaciones pendientes en IndexedDB. Cada cola y copia de lectura queda asociada al identificador público del usuario autenticado. Cuando regresa la conexión, `/api/sync` procesa clientes, ítems de biblioteca, creación o edición de cotizaciones y actualizaciones de órdenes. La tabla `sync_receipts` conserva el UUID de operación, tipo, propietario, huella del contenido y resultado. Un reintento con el mismo UUID y contenido devuelve el resultado anterior; reutilizar el UUID con otros datos se rechaza.
 
-La cola del dispositivo no sustituye a D1: solo es un almacenamiento transitorio hasta que Cloudflare confirma la operación. Antes de borrar datos del navegador o desinstalar la PWA, compruebe que el contador de pendientes sea cero.
+La cola del dispositivo no sustituye a D1: solo es un almacenamiento transitorio hasta que Cloudflare confirma la operación. La pantalla **Revisar cola offline** permite inspeccionar errores, reintentar o descartar cada cambio con confirmación. Antes de borrar datos del navegador o desinstalar la PWA, compruebe que el contador de pendientes sea cero.
 
-Por seguridad multiusuario, el service worker no guarda respuestas de `/api/*` en Cache Storage. La asignación, los avisos y los permisos siempre se vuelven a consultar en D1. Una actualización operativa ya abierta puede quedar en la cola offline, pero asignar o reasignar responsables requiere conexión.
+Por seguridad multiusuario, el service worker no guarda respuestas de `/api/*` ni `/login` en Cache Storage. Conserva únicamente el shell autenticado necesario para abrir la aplicación sin red y lo elimina al cerrar sesión. La asignación, los avisos y los permisos siempre se vuelven a consultar en D1. Una actualización operativa ya abierta puede quedar en la cola offline, pero asignar o reasignar responsables requiere conexión.
 
 En v2.8, la creación y actualización de actividades, los registros de horas y materiales y las nuevas solicitudes de abastecimiento utilizan la misma cola offline con comprobantes idempotentes. Las reservas, entradas, entregas, devoluciones, compras, aplicación de plantillas, fotografías y firmas requieren conexión y solo se consideran guardadas después de la confirmación del servidor. Esta restricción evita que dos dispositivos modifiquen el mismo saldo físico sin validación central.
 

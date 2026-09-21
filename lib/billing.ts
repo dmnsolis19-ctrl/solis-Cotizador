@@ -1,3 +1,5 @@
+import { businessDate } from "@/lib/dates";
+
 export const BILLING_CONCEPTS = ["Anticipo", "Avance", "Saldo final", "Servicio", "Otro"] as const;
 export const PAYMENT_METHODS = ["Transferencia", "Tarjeta", "Efectivo", "Cheque", "Otro"] as const;
 
@@ -7,7 +9,7 @@ export function billingAmounts(netAmount: number, taxPercent: number) {
   return { netAmount: net, taxAmount: tax, totalAmount: net + tax };
 }
 
-export function collectionStatus(input: { status: string; totalAmount: number; paidAmount: number; dueDate: string }, referenceDate = new Date().toISOString().slice(0, 10)) {
+export function collectionStatus(input: { status: string; totalAmount: number; paidAmount: number; dueDate: string }, referenceDate = businessDate()) {
   if (input.status === "Anulada" || input.status === "Borrador") return input.status;
   if (input.paidAmount >= input.totalAmount - 0.005) return "Pagada";
   if (input.paidAmount > 0) return input.dueDate && input.dueDate < referenceDate ? "Vencida" : "Parcial";
