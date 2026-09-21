@@ -1,6 +1,6 @@
-const STATIC_CACHE = "solis-cotizador-static-v12";
-const PRIVATE_SHELL_CACHE = "solis-cotizador-shell-v12";
-const STATIC_ASSETS = ["/manifest.webmanifest", "/solis-app-icon.svg", "/favicon.svg"];
+const STATIC_CACHE = "solis-cotizador-static-v13";
+const PRIVATE_SHELL_CACHE = "solis-cotizador-shell-v13";
+const STATIC_ASSETS = ["/manifest.webmanifest", "/solis-logo.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { Loader2, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,8 +39,10 @@ export default function LoginPage() {
     <main className="grid min-h-screen place-items-center bg-slate-950 px-4 py-10">
       <Card className="w-full max-w-md border-slate-800 shadow-2xl">
         <CardHeader className="space-y-4">
-          <div className="grid size-12 place-items-center rounded-xl bg-amber-400 text-slate-950"><LockKeyhole /></div>
-          <div><CardTitle className="text-2xl">SOLIS Cotizador</CardTitle><CardDescription>{needsSetup ? "Cree la cuenta administradora inicial." : "Ingrese con su correo y contraseña."}</CardDescription></div>
+          <div className="rounded-2xl border bg-white p-3 shadow-sm">
+            <Image src="/solis-logo.png" alt="SOLIS Ingeniería y Servicios SpA" width={1080} height={1080} priority className="mx-auto h-36 w-full object-contain" />
+          </div>
+          <div className="flex items-start gap-3"><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white"><LockKeyhole className="size-5" /></div><div><CardTitle className="text-2xl">SOLIS Cotizador</CardTitle><CardDescription>{needsSetup ? "Cree la cuenta administradora inicial." : "Ingrese con su correo y contraseña."}</CardDescription></div></div>
         </CardHeader>
         <CardContent>
           {!ready ? <div className="flex items-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="animate-spin" /> Preparando acceso…</div> : (

@@ -8,8 +8,9 @@ export const metadata: Metadata = {
   applicationName: "SOLIS Cotizador",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "SOLIS Cotizador" },
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/solis-logo.png",
+    shortcut: "/solis-logo.png",
+    apple: "/solis-logo.png",
   },
 };
 

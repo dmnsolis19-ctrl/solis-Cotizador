@@ -12,4 +12,13 @@ test("declares SOLIS metadata and a valid installable manifest", async () => {
   assert.equal(manifest.display, "standalone");
   assert.equal(manifest.start_url, "/");
   assert.equal(manifest.icons[0].purpose, "any maskable");
+  assert.equal(manifest.icons[0].src, "/solis-logo.png");
+  const [app, login, worker] = await Promise.all([
+    readFile(new URL("../app/cotizador-app.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/login/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
+  ]);
+  assert.match(app, /src="\/solis-logo\.png"/);
+  assert.match(login, /src="\/solis-logo\.png"/);
+  assert.match(worker, /solis-logo\.png/);
 });

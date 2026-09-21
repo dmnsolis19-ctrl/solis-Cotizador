@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Image from "next/image";
 import {
+  ArrowDown,
+  ArrowUp,
   BarChart3,
   Bell,
   BellRing,
@@ -14,6 +16,7 @@ import {
   ClipboardCheck,
   Cloud,
   CloudOff,
+  Copy,
   Download,
   FileCheck2,
   FileJson,
@@ -966,15 +969,15 @@ export default function CotizadorApp() {
         className="border-r-0 bg-slate-950 text-white"
       >
         <SidebarHeader className="border-b border-white/10 p-5">
-          <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-xl bg-amber-400 font-black text-slate-950">
-              S
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-xl border border-white/10 bg-white p-2 shadow-sm">
+              <Image src="/solis-logo.png" alt="SOLIS Ingeniería y Servicios SpA" width={1080} height={1080} priority className="h-24 w-full object-contain" />
             </div>
-            <div>
+            <div className="px-1">
               <div className="text-sm font-bold tracking-wide">
                 {companyName}
               </div>
-              <div className="text-xs text-slate-400">Cotizador PWA · v3.2</div>
+              <div className="text-xs text-slate-400">Cotizador PWA · v3.3</div>
             </div>
           </div>
         </SidebarHeader>
@@ -993,7 +996,7 @@ export default function CotizadorApp() {
                         setSection(item.id);
                         setQuery("");
                       }}
-                      className="text-slate-300 hover:bg-white/10 hover:text-white data-[active=true]:bg-amber-400 data-[active=true]:font-semibold data-[active=true]:text-slate-950"
+                      className="text-slate-300 hover:bg-white/10 hover:text-white data-[active=true]:bg-blue-600 data-[active=true]:font-semibold data-[active=true]:text-white"
                     >
                       <item.icon />
                       <span>{item.label}</span>
@@ -2605,6 +2608,24 @@ function QuoteDialog({
   const updateLine = (index: number, changes: Partial<QuoteLine>) => {
     setLines((current) => current.map((item, position) => position === index ? { ...item, ...changes } : item));
   };
+  const duplicateLine = (index: number) => {
+    setLines((current) => {
+      const source = current[index];
+      if (!source) return current;
+      const next = [...current];
+      next.splice(index + 1, 0, { ...source, rowId: crypto.randomUUID() });
+      return next;
+    });
+  };
+  const moveLine = (index: number, direction: -1 | 1) => {
+    setLines((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
   const save = async () => {
     if (!client || !project.trim() || !lines.length) {
       toast.error("Seleccione cliente, proyecto y al menos una partida.");
@@ -2731,7 +2752,7 @@ function QuoteDialog({
             </Button>
           </div>
           {lines.length ? (
-            <Table className="min-w-[940px] table-fixed">
+            <Table className="min-w-[1020px] table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[330px]">Partida</TableHead>
@@ -2740,7 +2761,7 @@ function QuoteDialog({
                   <TableHead className="w-[135px]">Costo unit.</TableHead>
                   <TableHead className="w-[135px]">Venta unit.</TableHead>
                   <TableHead className="w-[120px] text-right">Subtotal</TableHead>
-                  <TableHead className="w-[45px]" />
+                  <TableHead className="w-[125px] text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2784,18 +2805,20 @@ function QuoteDialog({
                       {money(line.quantity * line.unitPrice, quoteCurrency)}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() =>
-                          setLines((current) =>
-                            current.filter((_, p) => p !== index),
-                          )
-                        }
-                        aria-label="Quitar"
-                      >
-                        <X />
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button type="button" variant="ghost" size="icon-xs" onClick={() => moveLine(index, -1)} disabled={index === 0} aria-label="Mover partida arriba"><ArrowUp /></Button>
+                        <Button type="button" variant="ghost" size="icon-xs" onClick={() => moveLine(index, 1)} disabled={index === lines.length - 1} aria-label="Mover partida abajo"><ArrowDown /></Button>
+                        <Button type="button" variant="ghost" size="icon-xs" onClick={() => duplicateLine(index)} aria-label="Duplicar partida"><Copy /></Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => setLines((current) => current.filter((_, position) => position !== index))}
+                          aria-label="Quitar partida"
+                        >
+                          <X />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
