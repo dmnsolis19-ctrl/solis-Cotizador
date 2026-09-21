@@ -153,6 +153,7 @@ type Client = {
   email: string;
   phone: string;
   address: string;
+  updatedAt: string;
 };
 type CatalogItem = {
   publicId: string;
@@ -447,7 +448,7 @@ function overlayPendingOperations(
   };
   for (const operation of operations) {
     const payload = operation.payload as Record<string, unknown>;
-    if (operation.type === "client.create") {
+    if (operation.type === "client.create" || operation.type === "client.update") {
       const client: Client = {
         publicId: String(payload.publicId),
         name: String(payload.name || "Cliente pendiente"),
@@ -456,6 +457,7 @@ function overlayPendingOperations(
         email: String(payload.email || ""),
         phone: String(payload.phone || ""),
         address: String(payload.address || ""),
+        updatedAt: String(payload.expectedUpdatedAt || operation.createdAt),
       };
       next.clients = [
         ...next.clients.filter((item) => item.publicId !== client.publicId),
@@ -548,6 +550,7 @@ export default function CotizadorApp() {
   const [online, setOnline] = useState(true);
   const [query, setQuery] = useState("");
   const [clientOpen, setClientOpen] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
@@ -1207,7 +1210,7 @@ export default function CotizadorApp() {
                     </div>
                   )}
                   {section === "clients" && can("clients.write") && (
-                    <Button onClick={() => setClientOpen(true)}>
+                    <Button onClick={() => { setEditingClient(null); setClientOpen(true); }}>
                       <Plus /> Cliente
                     </Button>
                   )}
@@ -1230,7 +1233,10 @@ export default function CotizadorApp() {
                 />
               )}
               {section === "clients" && (
-                <ClientsTable clients={filteredClients} />
+                <ClientsTable
+                  clients={filteredClients}
+                  onEdit={can("clients.write") ? (client) => { setEditingClient(client); setClientOpen(true); } : undefined}
+                />
               )}
               {section === "catalog" && (
                 <CatalogTable items={filteredCatalog} />
@@ -1259,8 +1265,13 @@ export default function CotizadorApp() {
       />
       {can("clients.write") && (
         <ClientDialog
+          key={`client-${editingClient?.publicId || "new"}`}
           open={clientOpen}
-          onOpenChange={setClientOpen}
+          onOpenChange={(open) => {
+            setClientOpen(open);
+            if (!open) setEditingClient(null);
+          }}
+          client={editingClient}
           onSaved={refresh}
           onQueued={clientQueued}
         />
@@ -1735,7 +1746,7 @@ function QuotesTable({
     </div>
   );
 }
-function ClientsTable({ clients }: { clients: Client[] }) {
+function ClientsTable({ clients, onEdit }: { clients: Client[]; onEdit?: (client: Client) => void }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
       <Table>
@@ -1746,6 +1757,7 @@ function ClientsTable({ clients }: { clients: Client[] }) {
             <TableHead>Contacto</TableHead>
             <TableHead>Correo</TableHead>
             <TableHead>Teléfono</TableHead>
+            {onEdit && <TableHead className="text-right">Acciones</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1757,12 +1769,19 @@ function ClientsTable({ clients }: { clients: Client[] }) {
                 <TableCell>{c.contactName || "—"}</TableCell>
                 <TableCell>{c.email || "—"}</TableCell>
                 <TableCell>{c.phone || "—"}</TableCell>
+                {onEdit && (
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" onClick={() => onEdit(c)}>
+                      <PenLine /> Editar
+                    </Button>
+                  </TableCell>
+                )}
               </TableRow>
             ))
           ) : (
             <TableRow>
               <TableCell
-                colSpan={5}
+                colSpan={onEdit ? 6 : 5}
                 className="h-28 text-center text-slate-500"
               >
                 Agregue su primer cliente o importe el respaldo v1.9.
@@ -2259,11 +2278,13 @@ function UserDialog({
 function ClientDialog({
   open,
   onOpenChange,
+  client,
   onSaved,
   onQueued,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  client?: Client | null;
   onSaved: () => void;
   onQueued: (client: Client) => void;
 }) {
@@ -2272,10 +2293,12 @@ function ClientDialog({
     setSaving(true);
     try {
       const payload = {
-        publicId: crypto.randomUUID(),
+        publicId: client?.publicId ?? crypto.randomUUID(),
+        ...(client?.updatedAt ? { expectedUpdatedAt: client.updatedAt } : {}),
         ...Object.fromEntries(form),
       } as Record<string, string>;
-      const result = await executeOrQueue("client.create", payload);
+      const operation = client ? "client.update" : "client.create";
+      const result = await executeOrQueue(operation, payload);
       if (result.queued) {
         onQueued({
           publicId: payload.publicId,
@@ -2285,10 +2308,11 @@ function ClientDialog({
           email: payload.email || "",
           phone: payload.phone || "",
           address: payload.address || "",
+          updatedAt: new Date().toISOString(),
         });
-        toast.warning("Cliente guardado en la cola offline.");
+        toast.warning(client ? "Cambios del cliente guardados en la cola offline." : "Cliente guardado en la cola offline.");
       } else {
-        toast.success("Cliente guardado.");
+        toast.success(client ? "Cliente actualizado." : "Cliente guardado.");
         onSaved();
       }
       onOpenChange(false);
@@ -2302,21 +2326,21 @@ function ClientDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nuevo cliente</DialogTitle>
+          <DialogTitle>{client ? "Editar cliente" : "Nuevo cliente"}</DialogTitle>
           <DialogDescription>
-            Estos datos se reutilizarán en futuras cotizaciones.
+            {client ? "Actualice los datos maestros sin perder su historial." : "Estos datos se reutilizarán en futuras cotizaciones."}
           </DialogDescription>
         </DialogHeader>
         <form action={save} className="grid gap-4">
-          <Field name="name" label="Razón social o nombre" required />
+          <Field name="name" label="Razón social o nombre" defaultValue={client?.name} required minLength={2} maxLength={180} />
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field name="taxId" label="RUT" />
-            <Field name="contactName" label="Contacto" />
+            <Field name="taxId" label="RUT" defaultValue={client?.taxId} maxLength={20} />
+            <Field name="contactName" label="Contacto" defaultValue={client?.contactName} maxLength={180} />
           </div>
-          <Field name="email" label="Correo" type="email" />
+          <Field name="email" label="Correo" type="email" defaultValue={client?.email} maxLength={254} />
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field name="phone" label="Teléfono" />
-            <Field name="address" label="Dirección" />
+            <Field name="phone" label="Teléfono" defaultValue={client?.phone} maxLength={60} />
+            <Field name="address" label="Dirección" defaultValue={client?.address} maxLength={500} />
           </div>
           <DialogFooter>
             <Button
@@ -2327,7 +2351,7 @@ function ClientDialog({
               Cancelar
             </Button>
             <Button disabled={saving}>
-              {saving && <Loader2 className="animate-spin" />} Guardar cliente
+              {saving && <Loader2 className="animate-spin" />} {client ? "Guardar cambios" : "Guardar cliente"}
             </Button>
           </DialogFooter>
         </form>

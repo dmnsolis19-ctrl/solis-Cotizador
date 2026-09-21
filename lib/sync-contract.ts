@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const SYNC_OPERATION_TYPES = [
   "client.create",
+  "client.update",
   "catalog.create",
   "quote.create",
   "quote.update",
@@ -25,6 +26,7 @@ export type SyncOperation = z.infer<typeof syncOperationSchema>;
 export function syncOperationLabel(type: SyncOperationType) {
   return ({
     "client.create": "Nuevo cliente",
+    "client.update": "Edición de cliente",
     "catalog.create": "Nuevo ítem de biblioteca",
     "quote.create": "Nueva cotización",
     "quote.update": "Edición de cotización",

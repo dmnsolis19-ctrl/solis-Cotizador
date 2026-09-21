@@ -10,7 +10,7 @@ after(async () => { await vite.close(); });
 
 test("validates the supported offline operation contracts", async () => {
   const { SYNC_OPERATION_TYPES, syncOperationSchema, syncOperationLabel } = await vite.ssrLoadModule("/lib/sync-contract.ts");
-  assert.deepEqual(SYNC_OPERATION_TYPES, ["client.create", "catalog.create", "quote.create", "quote.update", "order.update", "activity.create", "activity.update", "entry.create", "material_request.create"]);
+  assert.deepEqual(SYNC_OPERATION_TYPES, ["client.create", "client.update", "catalog.create", "quote.create", "quote.update", "order.update", "activity.create", "activity.update", "entry.create", "material_request.create"]);
   for (const type of SYNC_OPERATION_TYPES) {
     const parsed = syncOperationSchema.parse({ id: "1a784adf-f37c-4f4e-aeca-953eff2dfb20", type, payload: { sample: true }, createdAt: "2026-08-28T01:00:00.000Z" });
     assert.equal(parsed.type, type);
