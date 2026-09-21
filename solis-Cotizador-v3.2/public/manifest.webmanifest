@@ -1,0 +1,14 @@
+{
+  "name": "SOLIS Cotizador PWA",
+  "short_name": "SOLIS Cotizador",
+  "description": "Cotizador técnico y comercial de SOLIS Ingeniería y Servicios SpA.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#020617",
+  "lang": "es-CL",
+  "orientation": "any",
+  "icons": [
+    { "src": "/solis-app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
