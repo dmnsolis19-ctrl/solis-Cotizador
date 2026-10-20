@@ -40,7 +40,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md border-slate-800 shadow-2xl">
         <CardHeader className="space-y-4">
           <div className="rounded-2xl border bg-white p-3 shadow-sm">
-            <Image src="/solis-logo.png" alt="SOLIS Ingeniería y Servicios SpA" width={1080} height={1080} priority className="mx-auto h-36 w-full object-contain" />
+            <Image src="/solis-logo.png" alt="SOLIS Ingeniería y Servicios SpA" width={1080} height={1080} priority unoptimized className="mx-auto h-36 w-full object-contain" />
           </div>
           <div className="flex items-start gap-3"><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white"><LockKeyhole className="size-5" /></div><div><CardTitle className="text-2xl">SOLIS Cotizador</CardTitle><CardDescription>{needsSetup ? "Cree la cuenta administradora inicial." : "Ingrese con su correo y contraseña."}</CardDescription></div></div>
         </CardHeader>

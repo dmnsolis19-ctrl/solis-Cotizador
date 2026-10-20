@@ -13,6 +13,9 @@ const clientFieldsSchema = z.object({
   email: z.string().trim().max(254).refine((value) => !value || z.string().email().safeParse(value).success, "El correo no es válido.").default(""),
   phone: z.string().trim().max(60).default(""),
   address: z.string().trim().max(500).default(""),
+  businessActivity: z.string().trim().max(180).default(""),
+  commune: z.string().trim().max(120).default(""),
+  city: z.string().trim().max(120).default(""),
 });
 const createClientSchema = clientFieldsSchema.extend({ publicId: z.string().uuid().optional() });
 const updateClientSchema = clientFieldsSchema.extend({
@@ -44,12 +47,14 @@ export async function POST(request: Request) {
     if (existing) return Response.json({ error: "Ya existe un cliente con ese identificador." }, { status: 409 });
     const { publicId: _requestedPublicId, ...fields } = input;
     void _requestedPublicId;
-    const record = clientRecord(fields);
+    const fullRecord = clientRecord(fields);
+    const { businessActivity: _activity, commune: _commune, city: _city, ...record } = fullRecord;
+    void _activity; void _commune; void _city;
     if (await duplicateRut(db, ownerEmail, record.taxId)) {
       return Response.json({ error: "Ya existe un cliente activo con ese RUT." }, { status: 409 });
     }
     const updatedAt = new Date().toISOString();
-    await db.insert(clients).values({ publicId, ownerEmail, ...record, payloadJson: JSON.stringify(record), updatedAt });
+    await db.insert(clients).values({ publicId, ownerEmail, ...record, payloadJson: JSON.stringify(fullRecord), updatedAt });
     const [row] = await db.select().from(clients).where(and(eq(clients.ownerEmail, ownerEmail), eq(clients.publicId, publicId))).limit(1);
     await writeAuditEvent(session, { action: "CLIENT_CREATED", entityType: "client", entityPublicId: publicId, detail: { name: record.name, taxId: record.taxId } });
     return Response.json({ client: row }, { status: 201 });
@@ -78,14 +83,16 @@ export async function PATCH(request: Request) {
 
     const { publicId, expectedUpdatedAt: _expectedUpdatedAt, ...fields } = input;
     void _expectedUpdatedAt;
-    const record = clientRecord(fields);
+    const fullRecord = clientRecord(fields);
+    const { businessActivity: _activity, commune: _commune, city: _city, ...record } = fullRecord;
+    void _activity; void _commune; void _city;
     if (await duplicateRut(db, ownerEmail, record.taxId, publicId)) {
       return Response.json({ error: "Ya existe otro cliente activo con ese RUT." }, { status: 409 });
     }
     const updatedAt = new Date(Math.max(Date.now(), Date.parse(existing.updatedAt) + 1)).toISOString();
     const [row] = await db.update(clients).set({
       ...record,
-      payloadJson: JSON.stringify(record),
+      payloadJson: JSON.stringify(fullRecord),
       updatedAt,
     }).where(and(
       eq(clients.ownerEmail, ownerEmail),

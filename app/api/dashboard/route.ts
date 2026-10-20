@@ -34,11 +34,12 @@ export async function GET() {
         discount_percent: "0",
         rounding_multiple: "1000",
       },
-      clients: clientRows,
+      clients: clientRows.map((row) => { const extra = JSON.parse(row.payloadJson || "{}"); return { ...row, businessActivity: String(extra.businessActivity || extra.giro || ""), commune: String(extra.commune || ""), city: String(extra.city || "") }; }),
       catalogItems: catalogRows,
       quotes: quoteRows,
       workOrders: session.user.role === "technician" ? orderRows.map((order) => ({ ...order, approvedSale: "0", payloadJson: "{}" })) : orderRows,
       quoteEvents: eventRows,
+      settingsUpdatedAt: settings?.updatedAt || "",
       sourceSchemaVersion: settings?.sourceSchemaVersion ?? 0,
       session: { user: session.user, permissions: session.permissions },
     });

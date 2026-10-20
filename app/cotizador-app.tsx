@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Image from "next/image";
 import {
+  Settings2,
   ArrowDown,
   ArrowUp,
   BarChart3,
@@ -110,6 +111,8 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  cacheResource,
+  cachedApi,
   activateOfflineScope,
   clearOfflineSessionData,
   discardOperation,
@@ -126,8 +129,13 @@ import {
 } from "@/lib/offline-queue";
 import { syncOperationLabel } from "@/lib/sync-contract";
 import { calculateQuote, type QuoteLine } from "@/lib/pricing";
+import { cachedQuoteDetail, overlayOfflineExecution } from "@/lib/offline-records";
+import { AccountingPanel } from "@/components/accounting-panel";
+import { OrderMaterialsPanel } from "@/components/order-materials-panel";
+import { PriceReferencePanel } from "@/components/price-reference-panel";
+import { CompanySettingsPanel } from "@/components/company-settings-panel";
 import { APP_VERSION } from "@/lib/app-version";
-import { materialGroupsSchema, materialLines, type MaterialGroup } from "@/lib/material-groups";
+import { composeQuoteLines, materialGroupsSchema, materialLines, type MaterialGroup } from "@/lib/material-groups";
 import { MaterialGroupsEditor } from "@/components/material-groups-editor";
 import { QuoteMaterialsPanel } from "@/components/quote-materials-panel";
 import { DocumentShare } from "@/components/document-share";
@@ -161,6 +169,7 @@ type Client = {
   email: string;
   phone: string;
   address: string;
+  businessActivity?: string; commune?: string; city?: string;
   updatedAt: string;
 };
 type QuoteLineDraft = QuoteLine & { rowId: string };
@@ -176,6 +185,9 @@ type CatalogItem = {
   unitPrice: string;
   currency: string;
   supplier: string;
+  reference?: string;
+  updatedAt?: string;
+  payloadJson?: string;
 };
 type Quote = {
   publicId: string;
@@ -200,6 +212,7 @@ type Quote = {
   approvedBy: string;
   approvalNotes: string;
   updatedAt: string;
+  payloadJson?: string;
 };
 type QuoteDetail = {
   quote: Quote;
@@ -217,6 +230,8 @@ type QuoteDetail = {
     paymentTerms: string;
     deliveryTerms: string;
     notes: string;
+    technicalValidation: string;
+    scopeExclusions: string;
   };
 };
 type WorkOrder = {
@@ -369,10 +384,11 @@ type DashboardData = {
   workOrders: WorkOrder[];
   quoteEvents: QuoteEvent[];
   sourceSchemaVersion: number;
+  settingsUpdatedAt: string;
   session: SessionInfo;
 };
 type Section =
-  "dashboard" | "quotes" | "clients" | "catalog" | "orders" | "profitability" | "billing" | "inventory" | "users" | "audit";
+  "dashboard" | "quotes" | "clients" | "catalog" | "orders" | "profitability" | "billing" | "inventory" | "users" | "audit" | "settings";
 
 const EMPTY_DATA: DashboardData = {
   company: {},
@@ -383,6 +399,7 @@ const EMPTY_DATA: DashboardData = {
   workOrders: [],
   quoteEvents: [],
   sourceSchemaVersion: 0,
+  settingsUpdatedAt: "",
   session: {
     user: { publicId: "", email: "", name: "", role: "technician" },
     permissions: [
@@ -424,6 +441,7 @@ const priorityClass = (priority: WorkOrder["priority"]) =>
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
+    signal: AbortSignal.timeout(20000),
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -498,14 +516,17 @@ function overlayPendingOperations(
       const lines = Array.isArray(payload.items)
         ? (payload.items as QuoteLine[])
         : [];
-      const calculated = calculateQuote(lines, {
+      const economic = {
         overheadPercent: numberValue(payload.overheadPercent, 10),
         contingencyPercent: numberValue(payload.contingencyPercent, 5),
         targetMarginPercent: numberValue(payload.targetMarginPercent, 25),
         discountPercent: numberValue(payload.discountPercent, 0),
         taxPercent: numberValue(payload.taxPercent, 19),
         roundingMultiple: numberValue(payload.roundingMultiple, 1000),
-      });
+      };
+      const groups = materialGroupsSchema.safeParse(payload.materialGroups || []);
+      const composed = composeQuoteLines(lines, groups.success ? groups.data : [], economic);
+      const calculated = calculateQuote(composed, economic);
       const publicId = String(payload.publicId);
       const existingQuote = next.quotes.find((entry) => entry.publicId === publicId);
       const quote: Quote = {
@@ -563,6 +584,7 @@ export default function CotizadorApp() {
   const [clientOpen, setClientOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [editingCatalog, setEditingCatalog] = useState<CatalogItem | null>(null);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
@@ -601,6 +623,9 @@ export default function CotizadorApp() {
       const operations = await listOperations();
       setData(overlayPendingOperations(serverData, operations));
       await saveDashboardSnapshot(serverData.session.user.publicId, serverData).catch(() => undefined);
+      await Promise.all(serverData.quotes.filter((quote) => !quote.locked).map(async (quote) => {
+        try { const detail = cachedQuoteDetail(quote); if (detail) await cacheResource(`/api/quotes?publicId=${encodeURIComponent(quote.publicId)}`, detail); } catch { /* Older imports may require opening the quote once online. */ }
+      }));
       if (serverData.session.permissions.includes("notifications.read")) {
         const notificationData = await api<{ notifications: UserNotification[]; unreadCount: number }>("/api/notifications").catch(() => null);
         if (notificationData) {
@@ -746,20 +771,27 @@ export default function CotizadorApp() {
     }, 0);
     const handleOnline = () => {
       setOnline(true);
-      void syncNow(true);
+      void syncNow(true).then(() => refresh());
     };
     const handleOffline = () => setOnline(false);
     const handleWorkerMessage = (event: MessageEvent) => {
-      if (event.data?.type === "SOLIS_SYNC_REQUEST") void syncNow();
+      if (event.data?.type === "SOLIS_SYNC_REQUEST") void updateQueueStatus().then(() => syncNow()).then(() => refresh());
     };
+    const handleVisible = () => { if (!document.hidden && navigator.onLine) void syncNow(); };
+    const interval = window.setInterval(handleVisible, 30000);
+    document.addEventListener("visibilitychange", handleVisible);
+    window.addEventListener("focus", handleVisible);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then(async (registration) => { await registration.update(); const ready = await navigator.serviceWorker.ready; ready.active?.postMessage({ type: "SOLIS_CACHE_SHELL" }); }).catch(() => undefined);
       navigator.serviceWorker.addEventListener("message", handleWorkerMessage);
     }
     return () => {
       window.clearTimeout(initialRefresh);
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("focus", handleVisible);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       if ("serviceWorker" in navigator)
@@ -960,6 +992,7 @@ export default function CotizadorApp() {
       icon: UserCog,
       permission: "users.manage",
     },
+    { id: "settings", label: "Empresa y documentos", icon: Settings2, permission: "settings.manage" },
     {
       id: "audit",
       label: "Auditoría",
@@ -978,7 +1011,7 @@ export default function CotizadorApp() {
         <SidebarHeader className="border-b border-white/10 p-5">
           <div className="space-y-3">
             <div className="overflow-hidden rounded-xl border border-white/10 bg-white p-2 shadow-sm">
-              <Image src="/solis-logo.png" alt="SOLIS Ingeniería y Servicios SpA" width={1080} height={1080} priority className="h-24 w-full object-contain" />
+              <Image src={String(data.company.logo_jpeg || "/solis-logo.png")} alt={companyName} width={1080} height={1080} priority unoptimized className="h-24 w-full object-contain" />
             </div>
             <div className="px-1">
               <div className="text-sm font-bold tracking-wide">
@@ -1092,8 +1125,7 @@ export default function CotizadorApp() {
                 {nav.find((item) => item.id === section)?.label}
               </div>
               <div className="hidden text-xs text-slate-500 sm:block">
-                {ROLE_LABELS[data.session.user.role]} · SOLIS Ingeniería y
-                Servicios SpA
+                {ROLE_LABELS[data.session.user.role]} · {companyName}
               </div>
             </div>
           </div>
@@ -1144,7 +1176,7 @@ export default function CotizadorApp() {
             {can("quotes.write") && (
               <Button
                 onClick={() => { setEditingQuote(null); setQuoteOpen(true); }}
-                className="bg-amber-400 text-slate-950 hover:bg-amber-300"
+                className="bg-blue-600 text-white hover:bg-blue-700"
               >
                 <Plus />
                 <span className="hidden sm:inline">Nueva cotización</span>
@@ -1153,6 +1185,7 @@ export default function CotizadorApp() {
           </div>
         </header>
         <main className="p-4 md:p-7">
+          {!online && <div role="status" className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900"><span><WifiOff className="mr-2 inline size-4" />Trabajando sin conexión. Los cambios se guardan en este dispositivo y se sincronizan al recuperar internet.</span><Button variant="ghost" size="sm" onClick={() => void openQueueDialog()}>Revisar {queueStatus.pending} pendientes</Button></div>}
           {accessError ? (
             <AccessDenied message={accessError} />
           ) : loading && !data.session.user.email ? (
@@ -1187,6 +1220,8 @@ export default function CotizadorApp() {
                 setUserOpen(true);
               }}
             />
+          ) : section === "settings" ? (
+            <CompanySettingsPanel key={data.settingsUpdatedAt} company={data.company} updatedAt={data.settingsUpdatedAt} online={online} onSaved={refresh} />
           ) : section === "audit" ? (
             <AuditPanel events={auditData} loading={adminLoading} />
           ) : (
@@ -1226,7 +1261,7 @@ export default function CotizadorApp() {
                     </Button>
                   )}
                   {section === "catalog" && can("catalog.write") && (
-                    <Button onClick={() => setCatalogOpen(true)}>
+                    <Button onClick={() => { setEditingCatalog(null); setCatalogOpen(true); }}>
                       <Plus /> Ítem
                     </Button>
                   )}
@@ -1250,7 +1285,7 @@ export default function CotizadorApp() {
                 />
               )}
               {section === "catalog" && (
-                <CatalogTable items={filteredCatalog} />
+                <div className="space-y-5"><PriceReferencePanel online={online} canImport={can("catalog.write")} existingCodes={data.catalogItems.map((item) => item.code)} onImported={refresh} /><CatalogTable items={filteredCatalog} onEdit={can("catalog.write") ? (item) => { setEditingCatalog(item); setCatalogOpen(true); } : undefined} /></div>
               )}
               {section === "orders" && (
                 <OrdersTable
@@ -1289,6 +1324,8 @@ export default function CotizadorApp() {
       )}
       {can("catalog.write") && (
         <CatalogDialog
+          key={`${editingCatalog?.publicId || "new"}-${catalogOpen}`}
+          item={editingCatalog}
           open={catalogOpen}
           onOpenChange={setCatalogOpen}
           onSaved={refresh}
@@ -1319,6 +1356,7 @@ export default function CotizadorApp() {
       <QuoteFlowDialog
         key={selectedQuote?.publicId || "quote-flow"}
         quote={selectedQuote}
+        company={data.company}
         events={data.quoteEvents.filter(
           (event) => event.quotePublicId === selectedQuote?.publicId,
         )}
@@ -1540,7 +1578,7 @@ function Dashboard({
             {canCreateQuote && (
               <Button
                 onClick={onNewQuote}
-                className="bg-amber-400 text-slate-950 hover:bg-amber-300"
+                className="bg-blue-600 text-white hover:bg-blue-700"
               >
                 <FilePlus2 /> Crear cotización
               </Button>
@@ -1804,7 +1842,7 @@ function ClientsTable({ clients, onEdit }: { clients: Client[]; onEdit?: (client
     </div>
   );
 }
-function CatalogTable({ items }: { items: CatalogItem[] }) {
+function CatalogTable({ items, onEdit }: { items: CatalogItem[]; onEdit?: (item: CatalogItem) => void }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
       <Table>
@@ -1816,6 +1854,7 @@ function CatalogTable({ items }: { items: CatalogItem[] }) {
             <TableHead>Unidad</TableHead>
             <TableHead className="text-right">Costo interno</TableHead>
             <TableHead className="text-right">Precio venta</TableHead>
+            {onEdit && <TableHead />}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1842,12 +1881,13 @@ function CatalogTable({ items }: { items: CatalogItem[] }) {
                 <TableCell className="text-right font-semibold">
                   {money(i.unitPrice, i.currency)}
                 </TableCell>
+                {onEdit && <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => onEdit(i)}><PenLine />Editar</Button></TableCell>}
               </TableRow>
             ))
           ) : (
             <TableRow>
               <TableCell
-                colSpan={6}
+                colSpan={onEdit ? 7 : 6}
                 className="h-28 text-center text-slate-500"
               >
                 La biblioteca está vacía.
@@ -2353,6 +2393,8 @@ function ClientDialog({
             <Field name="phone" label="Teléfono" defaultValue={client?.phone} maxLength={60} />
             <Field name="address" label="Dirección" defaultValue={client?.address} maxLength={500} />
           </div>
+          <Field name="businessActivity" label="Giro para facturación" defaultValue={client?.businessActivity} maxLength={180} />
+          <div className="grid gap-4 sm:grid-cols-2"><Field name="commune" label="Comuna" defaultValue={client?.commune} maxLength={120} /><Field name="city" label="Ciudad" defaultValue={client?.city} maxLength={120} /></div>
           <DialogFooter>
             <Button
               type="button"
@@ -2372,11 +2414,13 @@ function ClientDialog({
 }
 
 function CatalogDialog({
+  item,
   open,
   onOpenChange,
   onSaved,
   onQueued,
 }: {
+  item?: CatalogItem | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onSaved: () => void;
@@ -2387,8 +2431,9 @@ function CatalogDialog({
     setSaving(true);
     try {
       const payload = {
-        publicId: crypto.randomUUID(),
-        description: "",
+        publicId: item?.publicId || crypto.randomUUID(),
+        ...(item?.updatedAt ? { expectedUpdatedAt: item.updatedAt } : {}),
+        description: item?.description || "",
         ...Object.fromEntries(form),
       } as Record<string, string>;
       const result = await executeOrQueue("catalog.create", payload);
@@ -2408,7 +2453,7 @@ function CatalogDialog({
         });
         toast.warning("Ítem guardado en la cola offline.");
       } else {
-        toast.success("Ítem agregado a la biblioteca.");
+        toast.success(item ? "Costo y precio actualizados." : "Ítem agregado a la biblioteca.");
         onSaved();
       }
       onOpenChange(false);
@@ -2422,48 +2467,52 @@ function CatalogDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Nuevo ítem de biblioteca</DialogTitle>
+          <DialogTitle>{item ? "Editar material y precios" : "Nuevo ítem de biblioteca"}</DialogTitle>
           <DialogDescription>
             El costo interno nunca se mostrará al cliente.
           </DialogDescription>
         </DialogHeader>
         <form action={save} className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field name="code" label="Código" required />
+            <Field name="code" label="Código" defaultValue={item?.code} required />
             <SelectField
               name="type"
               label="Tipo"
+              defaultValue={item?.type}
               options={["Material", "Mano de obra", "Servicio"]}
             />
-            <Field name="category" label="Categoría" defaultValue="General" />
+            <Field name="category" label="Categoría" defaultValue={item?.category || "General"} />
           </div>
-          <Field name="name" label="Descripción corta" required />
+          <Field name="name" label="Descripción corta" defaultValue={item?.name} required />
           <div className="grid gap-4 sm:grid-cols-4">
-            <Field name="unit" label="Unidad" defaultValue="un" required />
+            <Field name="unit" label="Unidad" defaultValue={item?.unit || "un"} required />
             <Field
               name="unitCost"
               label="Costo interno"
               type="number"
-              defaultValue="0"
+              defaultValue={item?.unitCost || "0"}
               required
             />
             <Field
               name="unitPrice"
               label="Precio venta"
               type="number"
-              defaultValue="0"
+              defaultValue={item?.unitPrice || "0"}
               required
             />
             <SelectField
               name="currency"
               label="Moneda"
+              defaultValue={item?.currency}
               options={["CLP", "USD", "EUR", "UF"]}
             />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field name="supplier" label="Proveedor" />
-            <Field name="reference" label="Referencia" />
+            <Field name="supplier" label="Proveedor" defaultValue={item?.supplier} />
+            <Field name="reference" label="Referencia / URL" defaultValue={item?.reference} />
           </div>
+          <Field name="priceDate" label="Fecha de confirmación del costo" type="date" defaultValue={today()} />
+          <p className="text-xs text-slate-500">Costo y venta son netos por la unidad indicada. Las cotizaciones guardadas conservan sus valores; los nuevos materiales toman este costo.</p>
           <DialogFooter>
             <Button
               type="button"
@@ -2519,6 +2568,8 @@ function QuoteDialog({
   const [paymentTerms, setPaymentTerms] = useState("50% anticipo / 50% contra entrega");
   const [deliveryTerms, setDeliveryTerms] = useState("Por definir");
   const [notes, setNotes] = useState("");
+  const [technicalValidation, setTechnicalValidation] = useState("");
+  const [scopeExclusions, setScopeExclusions] = useState("");
   const client = data.clients.find((item) => item.publicId === clientId);
   const economic = {
     overheadPercent,
@@ -2557,11 +2608,12 @@ function QuoteDialog({
         setPaymentTerms("50% anticipo / 50% contra entrega");
         setDeliveryTerms("Por definir");
         setNotes("");
+        setTechnicalValidation(""); setScopeExclusions("");
         setLoadingDetails(false);
         return;
       }
       try {
-        const detail = await api<QuoteDetail>(`/api/quotes?publicId=${encodeURIComponent(quote.publicId)}`);
+        const detail = await cachedApi<QuoteDetail>(`/api/quotes?publicId=${encodeURIComponent(quote.publicId)}`);
         if (cancelled) return;
         setClientId(detail.quote.clientPublicId || "");
         setProject(detail.quote.project);
@@ -2579,6 +2631,7 @@ function QuoteDialog({
         setPaymentTerms(detail.commercial.paymentTerms);
         setDeliveryTerms(detail.commercial.deliveryTerms);
         setNotes(detail.commercial.notes);
+        setTechnicalValidation(detail.commercial.technicalValidation || ""); setScopeExclusions(detail.commercial.scopeExclusions || "");
       } catch (error) {
         if (!cancelled) {
           toast.error(error instanceof Error ? error.message : "No fue posible cargar el borrador.");
@@ -2663,6 +2716,7 @@ function QuoteDialog({
       paymentTerms,
       deliveryTerms,
       notes,
+      technicalValidation, scopeExclusions,
       materialGroups: validatedGroups.data,
       items: lines.map((line) => ({
         name: line.name,
@@ -2912,6 +2966,8 @@ function QuoteDialog({
               <div className="space-y-2"><Label>Condición de pago</Label><textarea value={paymentTerms} onChange={(event) => setPaymentTerms(event.target.value)} className="min-h-20 w-full rounded-md border bg-white px-3 py-2 text-sm" /></div>
               <div className="space-y-2"><Label>Plazo o condición de entrega</Label><textarea value={deliveryTerms} onChange={(event) => setDeliveryTerms(event.target.value)} className="min-h-20 w-full rounded-md border bg-white px-3 py-2 text-sm" /></div>
             </div>
+            <div className="space-y-2 sm:col-span-2 lg:col-span-3"><Label>Validación técnica</Label><textarea value={technicalValidation} maxLength={4000} onChange={(event) => setTechnicalValidation(event.target.value)} placeholder="Condiciones que deben verificarse antes del suministro o montaje…" className="min-h-20 w-full rounded-md border bg-white px-3 py-2 text-sm" /></div>
+            <div className="space-y-2 sm:col-span-2 lg:col-span-3"><Label>Alcance y exclusiones</Label><textarea value={scopeExclusions} maxLength={4000} onChange={(event) => setScopeExclusions(event.target.value)} placeholder="Qué incluye y qué queda fuera de la oferta…" className="min-h-20 w-full rounded-md border bg-white px-3 py-2 text-sm" /></div>
             <div className="space-y-2 sm:col-span-2 lg:col-span-3"><Label>Observaciones comerciales</Label><textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 w-full rounded-md border bg-white px-3 py-2 text-sm" /></div>
           </CardContent>
         </Card>
@@ -2922,7 +2978,7 @@ function QuoteDialog({
           <Button
             onClick={save}
             disabled={saving || (!lines.length && !materialGroups.length) || Boolean(materialCalculationError)}
-            className="bg-amber-400 text-slate-950 hover:bg-amber-300"
+            className="bg-blue-600 text-white hover:bg-blue-700"
           >
             {saving ? (
               <Loader2 className="animate-spin" />
@@ -2942,6 +2998,7 @@ function QuoteDialog({
 
 function QuoteFlowDialog({
   quote,
+  company,
   events,
   actor,
   canFlow,
@@ -2952,6 +3009,7 @@ function QuoteFlowDialog({
   onSaved,
 }: {
   quote: Quote | null;
+  company: Record<string, unknown>;
   events: QuoteEvent[];
   actor: string;
   canFlow: boolean;
@@ -3134,7 +3192,7 @@ function QuoteFlowDialog({
                 )}
               </div>
             </div>
-            {canDocument && <QuoteMaterialsPanel key={quote.publicId} quotePublicId={quote.publicId} quoteNumber={quote.number} />}
+            {canDocument && <QuoteMaterialsPanel key={quote.publicId} quotePublicId={quote.publicId} quoteNumber={quote.number} project={quote.project} company={company} />}
             {canDocument && (
               <DocumentsPanel
                 entityType="quote"
@@ -3363,7 +3421,7 @@ function InventoryPanel({ online }: { online: boolean }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await api<InventoryData>("/api/inventory");
+      const result = await cachedApi<InventoryData>("/api/inventory");
       setData(result);
       const defaultWarehouse = result.warehouses.find((warehouse) => warehouse.isDefault)?.publicId || result.warehouses[0]?.publicId || "";
       setReceiptWarehouse((current) => current || defaultWarehouse);
@@ -3753,6 +3811,7 @@ function OrderDialog({
             onQueued={onExecutionQueued}
           />
         )}
+        {canDocument && <OrderMaterialsPanel publicId={order.publicId} online={online} />}
         {canDocument && (
           <DocumentsPanel
             entityType="work_order"
@@ -3834,11 +3893,12 @@ function FieldExecutionPanel({
     setLoading(true);
     try {
       const [execution, materialResult, templateResult] = await Promise.all([
-        api<Omit<ExecutionData, "materialRequests" | "requestOptions" | "canApproveMaterials" | "canManageTemplates">>(`/api/order-execution?workOrderPublicId=${encodeURIComponent(order.publicId)}`),
-        api<{ requests: MaterialRequest[]; requestOptions: MaterialRequestOption[]; canApprove: boolean }>(`/api/material-requests?workOrderPublicId=${encodeURIComponent(order.publicId)}`),
-        api<{ templates: FieldTemplate[]; canManage: boolean }>("/api/field-templates"),
+        cachedApi<Omit<ExecutionData, "materialRequests" | "requestOptions" | "canApproveMaterials" | "canManageTemplates">>(`/api/order-execution?workOrderPublicId=${encodeURIComponent(order.publicId)}`),
+        cachedApi<{ requests: MaterialRequest[]; requestOptions: MaterialRequestOption[]; canApprove: boolean }>(`/api/material-requests?workOrderPublicId=${encodeURIComponent(order.publicId)}`),
+        cachedApi<{ templates: FieldTemplate[]; canManage: boolean }>("/api/field-templates"),
       ]);
-      setData({ ...execution, materialRequests: materialResult.requests, requestOptions: materialResult.requestOptions, canApproveMaterials: materialResult.canApprove, canManageTemplates: templateResult.canManage });
+      const snapshot = { ...execution, materialRequests: materialResult.requests, requestOptions: materialResult.requestOptions, canApproveMaterials: materialResult.canApprove, canManageTemplates: templateResult.canManage };
+      setData(overlayOfflineExecution(snapshot, await listOperations(), order.publicId));
       setTemplates(templateResult.templates);
       if (templateResult.templates[0]) setSelectedTemplate((current) => current || templateResult.templates[0].publicId);
     } catch (error) {
@@ -4276,7 +4336,7 @@ function BillingPanel({ online, actor }: { online: boolean; actor: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await api<BillingData>("/api/billing");
+      const result = await cachedApi<BillingData>("/api/billing");
       setData(result);
       const currencies = Object.keys(result.summaryByCurrency);
       if (currencies.length && !currencies.includes(currency)) setCurrency(currencies.includes("CLP") ? "CLP" : currencies[0]);
@@ -4304,7 +4364,7 @@ function BillingPanel({ online, actor }: { online: boolean; actor: string }) {
   const cards: Array<[string, number, string]> = [["Documentado", summary.billed, "text-slate-950"], ["Cobrado", summary.collected, "text-emerald-700"], ["Por cobrar", summary.receivable, "text-amber-700"], ["Vencido", summary.overdue, "text-red-700"]];
   return <section className="space-y-5">
     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h1 className="text-2xl font-bold tracking-tight text-slate-950">Cobranza y flujo de caja</h1><p className="mt-1 text-sm text-slate-500">Anticipos, avances, pagos parciales, vencimientos y saldo comercial por proyecto.</p></div><div className="flex gap-2"><select value={currency} onChange={(event) => setCurrency(event.target.value)} className="h-10 rounded-md border bg-white px-3 text-sm">{Object.keys(data.summaryByCurrency).length ? Object.keys(data.summaryByCurrency).map((value) => <option key={value}>{value}</option>) : <option>CLP</option>}</select>{data.canManage && <Button onClick={() => setCreateOpen(true)} disabled={!online}><Plus />Documento de cobro</Button>}</div></div>
-    <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"><ShieldCheck className="mr-2 inline size-4" />{data.notice || "Este módulo controla cobros internos; la emisión tributaria DTE se integrará por separado."}</div>
+    <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"><ShieldCheck className="mr-2 inline size-4" />{data.notice || "Controle cobros y prepare solicitudes de facturación para su contador."}</div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label, value, tone]) => <Card key={label}><CardHeader className="pb-2"><CardDescription>{label} · {currency}</CardDescription><CardTitle className={`text-xl ${tone}`}>{money(value, currency)}</CardTitle></CardHeader></Card>)}</div>
     <Card><CardHeader><CardTitle>Documentos y pagos</CardTitle><CardDescription>{data.documents.filter((document) => document.status === "Vencida").length} vencidos · {data.documents.filter((document) => document.status === "Pagada").length} pagados</CardDescription></CardHeader><CardContent>{loading ? <LoadingState /> : data.documents.length ? <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Documento</TableHead><TableHead>Cliente / proyecto</TableHead><TableHead>Vence</TableHead><TableHead>Total</TableHead><TableHead>Cobrado</TableHead><TableHead>Saldo</TableHead><TableHead>Estado</TableHead></TableRow></TableHeader><TableBody>{data.documents.map((document) => <TableRow key={document.publicId} className="cursor-pointer" onClick={() => { setSelected(document); setPaymentAmount(document.balance); }}><TableCell><div className="font-semibold">{document.number}</div><div className="text-xs text-slate-500">{document.concept}</div></TableCell><TableCell><div>{document.clientName}</div><div className="text-xs text-slate-500">{document.project}</div></TableCell><TableCell>{document.dueDate}</TableCell><TableCell>{money(document.totalAmount, document.currency)}</TableCell><TableCell className="text-emerald-700">{money(document.paidAmount, document.currency)}</TableCell><TableCell className={document.balance > 0 ? "font-semibold text-amber-700" : "text-slate-500"}>{money(document.balance, document.currency)}</TableCell><TableCell><Badge variant="outline" className={document.status === "Vencida" ? "border-red-200 bg-red-50 text-red-700" : document.status === "Pagada" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "bg-white"}>{document.status}</Badge></TableCell></TableRow>)}</TableBody></Table></div> : <div className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">Aún no existen documentos de cobro.</div>}</CardContent></Card>
     <Dialog open={createOpen} onOpenChange={setCreateOpen}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>Nuevo documento de cobro</DialogTitle><DialogDescription>El monto neto acumulado no puede superar la venta aprobada de la orden.</DialogDescription></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Orden de trabajo</Label><select value={workOrderPublicId} onChange={(event) => { setWorkOrderPublicId(event.target.value); const target = data.orders.find((item) => item.publicId === event.target.value); if (target) setNetAmount(target.availableNet); }} className="h-10 w-full rounded-md border bg-white px-3 text-sm"><option value="">Seleccione…</option>{data.orders.filter((item) => item.availableNet > 0).map((item) => <option key={item.publicId} value={item.publicId}>{item.number} · {item.clientName} · disponible {money(item.availableNet, item.currency)}</option>)}</select>{order && <p className="text-xs text-slate-500">Venta neta aprobada: {money(order.approvedSale, order.currency)} · comprometido: {money(order.committedNet, order.currency)}</p>}</div><div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label>Concepto</Label><select value={concept} onChange={(event) => setConcept(event.target.value as typeof concept)} className="h-10 w-full rounded-md border bg-white px-3 text-sm">{BILLING_CONCEPT_OPTIONS.map((value) => <option key={value}>{value}</option>)}</select></div><div className="space-y-2"><Label>Monto neto</Label><Input type="number" min="0" value={netAmount || ""} onChange={(event) => setNetAmount(Number(event.target.value))} /></div><div className="space-y-2"><Label>Emisión</Label><Input type="date" value={issueDate} onChange={(event) => setIssueDate(event.target.value)} /></div><div className="space-y-2"><Label>Vencimiento</Label><Input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></div><div className="space-y-2"><Label>IVA referencial (%)</Label><Input type="number" min="0" max="100" value={taxPercent} onChange={(event) => setTaxPercent(Number(event.target.value))} /></div><div className="rounded-lg bg-slate-50 p-3 text-sm"><div className="text-xs text-slate-500">Total con IVA</div><div className="font-bold">{money(netAmount * (1 + taxPercent / 100), order?.currency || "CLP")}</div></div></div><div className="space-y-2"><Label>Observaciones</Label><textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 w-full rounded-md border px-3 py-2 text-sm" /></div></div><DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button><Button onClick={createDocument} disabled={!online || !workOrderPublicId || netAmount <= 0 || saving}>{saving && <Loader2 className="animate-spin" />}Crear borrador</Button></DialogFooter></DialogContent></Dialog>
@@ -4312,6 +4372,7 @@ function BillingPanel({ online, actor }: { online: boolean; actor: string }) {
       {selected.payments.length > 0 && <div className="space-y-2"><div className="text-sm font-semibold">Pagos registrados</div>{selected.payments.map((payment) => <div key={payment.publicId} className="flex justify-between rounded-lg border p-3 text-sm"><div><div className="font-medium">{payment.paymentDate} · {payment.method}</div><div className="text-xs text-slate-500">{payment.reference} · {payment.recordedBy}</div></div><div className="font-bold text-emerald-700">{money(payment.amount, selected.currency)}</div></div>)}</div>}
       {selected.status === "Borrador" && data.canManage && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="text-sm font-semibold">Borrador no emitido</div><p className="mt-1 text-xs text-amber-900">Revise monto, fechas y cliente. Después de emitir podrá registrar pagos.</p><Button className="mt-3" onClick={() => void action({ action: "issue", publicId: selected.publicId }, "Documento emitido.")} disabled={!online || saving}><FileCheck2 />Emitir documento</Button></div>}
       {!['Borrador','Anulada','Pagada'].includes(selected.status) && data.canRecordPayments && <div className="space-y-3 rounded-xl border bg-slate-50 p-4"><div className="text-sm font-semibold">Registrar pago</div><div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label>Fecha</Label><Input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} /></div><div className="space-y-2"><Label>Monto</Label><Input type="number" min="0" max={selected.balance} value={paymentAmount || ""} onChange={(event) => setPaymentAmount(Number(event.target.value))} /></div><div className="space-y-2"><Label>Método</Label><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as typeof paymentMethod)} className="h-10 w-full rounded-md border bg-white px-3 text-sm">{PAYMENT_METHOD_OPTIONS.map((value) => <option key={value}>{value}</option>)}</select></div><div className="space-y-2"><Label>Referencia</Label><Input value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="Transferencia, comprobante…" /></div></div><Button onClick={() => void action({ action: "payment", publicId: selected.publicId, paymentDate, amount: paymentAmount, method: paymentMethod, reference: paymentReference, notes: "" }, "Pago registrado.").then(() => { setPaymentReference(""); })} disabled={!online || saving || paymentAmount <= 0 || paymentAmount > selected.balance || paymentReference.trim().length < 2}><CircleDollarSign />Registrar pago</Button></div>}
+      {!["Borrador", "Anulada"].includes(selected.status) && <AccountingPanel key={selected.publicId} billingDocumentPublicId={selected.publicId} online={online} />}
       {data.canDocument && !["Borrador", "Anulada"].includes(selected.status) && <DocumentsPanel entityType="collection_document" entityPublicId={selected.publicId} actor={actor} canGenerate={online} blockedMessage="Conéctese para emitir el documento PDF." />}
       {data.canManage && selected.status !== "Anulada" && selected.paidAmount === 0 && <div className="space-y-2 border-t pt-4"><Label>Anulación controlada</Label><div className="flex gap-2"><Input value={voidReason} onChange={(event) => setVoidReason(event.target.value)} placeholder="Motivo de anulación" /><Button variant="destructive" onClick={() => void action({ action: "void", publicId: selected.publicId, reason: voidReason }, "Documento anulado.")} disabled={!online || saving || voidReason.trim().length < 5}>Anular</Button></div></div>}
       <DialogFooter><Button variant="outline" onClick={() => setSelected(null)}>Cerrar</Button></DialogFooter></>}</DialogContent></Dialog>
@@ -4445,7 +4506,7 @@ function DocumentsPanel({
     <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-amber-400 p-2 text-slate-950">
+          <div className="rounded-lg bg-blue-600 p-2 text-white">
             <FileText className="size-4" />
           </div>
           <div>
@@ -4598,6 +4659,7 @@ function Field({
         minLength={minLength}
         maxLength={maxLength}
         min={type === "number" ? 0 : undefined}
+        step={type === "number" ? "any" : undefined}
       />
     </div>
   );
@@ -4634,10 +4696,12 @@ function SelectField({
   name,
   label,
   options,
+  defaultValue,
 }: {
   name: string;
   label: string;
   options: string[];
+  defaultValue?: string;
 }) {
   return (
     <div className="space-y-2">
@@ -4645,6 +4709,7 @@ function SelectField({
       <select
         id={name}
         name={name}
+        defaultValue={defaultValue}
         className="h-9 w-full rounded-md border bg-white px-3 text-sm"
       >
         {options.map((o) => (

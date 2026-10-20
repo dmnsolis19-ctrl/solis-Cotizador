@@ -28,6 +28,8 @@ const quoteSchema = z.object({
   paymentTerms: z.string().trim().max(1000).default(""),
   deliveryTerms: z.string().trim().max(1000).default(""),
   notes: z.string().trim().max(4000).default(""),
+  technicalValidation: z.string().trim().max(4000).default(""),
+  scopeExclusions: z.string().trim().max(4000).default(""),
   materialGroups: materialGroupsSchema.default([]),
   items: z.array(z.object({
     name: z.string().trim().min(2).max(240),
@@ -103,6 +105,8 @@ export async function GET(request: Request) {
         paymentTerms: String(payload.paymentTerms ?? payload.payment_terms ?? ""),
         deliveryTerms: String(payload.deliveryTerms ?? payload.delivery_terms ?? ""),
         notes: String(payload.notes ?? ""),
+        technicalValidation: String(payload.technicalValidation ?? payload.technical_validation ?? ""),
+        scopeExclusions: String(payload.scopeExclusions ?? ""),
       },
     });
   } catch (error) {
