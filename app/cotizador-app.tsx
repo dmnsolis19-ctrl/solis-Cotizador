@@ -126,6 +126,11 @@ import {
 } from "@/lib/offline-queue";
 import { syncOperationLabel } from "@/lib/sync-contract";
 import { calculateQuote, type QuoteLine } from "@/lib/pricing";
+import { APP_VERSION } from "@/lib/app-version";
+import { materialGroupsSchema, materialLines, type MaterialGroup } from "@/lib/material-groups";
+import { MaterialGroupsEditor } from "@/components/material-groups-editor";
+import { QuoteMaterialsPanel } from "@/components/quote-materials-panel";
+import { DocumentShare } from "@/components/document-share";
 import { businessDate } from "@/lib/dates";
 import {
   EXECUTION_ENTRY_TYPES,
@@ -199,6 +204,8 @@ type Quote = {
 type QuoteDetail = {
   quote: Quote;
   items: QuoteLine[];
+  manualItems?: QuoteLine[];
+  materialGroups: MaterialGroup[];
   commercial: {
     taxPercent: number;
     overheadPercent: number;
@@ -977,7 +984,7 @@ export default function CotizadorApp() {
               <div className="text-sm font-bold tracking-wide">
                 {companyName}
               </div>
-              <div className="text-xs text-slate-400">Cotizador PWA · v3.3</div>
+              <div className="text-xs text-slate-400">Cotizador PWA · v{APP_VERSION}</div>
             </div>
           </div>
         </SidebarHeader>
@@ -1519,7 +1526,7 @@ function Dashboard({
         <div className="relative flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
           <div>
             <Badge className="mb-3 bg-amber-400 text-slate-950">
-              PWA v3.2 · Cotizaciones y operación offline
+              PWA v{APP_VERSION} · Cotizaciones y operación offline
             </Badge>
             <h1 className="max-w-2xl text-2xl font-bold tracking-tight md:text-3xl">
               Del presupuesto aprobado a la evidencia real del trabajo ejecutado.
@@ -2498,6 +2505,7 @@ function QuoteDialog({
   const [issueDate, setIssueDate] = useState(today());
   const [quoteCurrency, setQuoteCurrency] = useState("CLP");
   const [lines, setLines] = useState<QuoteLineDraft[]>([]);
+  const [materialGroups, setMaterialGroups] = useState<MaterialGroup[]>([]);
   const [catalogId, setCatalogId] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(Boolean(quote));
@@ -2520,7 +2528,10 @@ function QuoteDialog({
     taxPercent,
     roundingMultiple,
   };
-  const calculated = calculateQuote(lines, economic);
+  let groupLines: QuoteLine[] = [];
+  let materialCalculationError = "";
+  try { groupLines = materialLines(materialGroups, economic); } catch (error) { materialCalculationError = error instanceof Error ? error.message : "Revise los materiales."; }
+  const calculated = calculateQuote([...lines, ...groupLines], economic);
 
   useEffect(() => {
     if (!open) return;
@@ -2535,6 +2546,7 @@ function QuoteDialog({
         setIssueDate(today());
         setQuoteCurrency("CLP");
         setLines([]);
+        setMaterialGroups([]);
         setDiscount(numberValue(settings.discount_percent, 0));
         setTaxPercent(19);
         setOverheadPercent(numberValue(settings.overhead_percent, 10));
@@ -2555,7 +2567,8 @@ function QuoteDialog({
         setProject(detail.quote.project);
         setIssueDate(detail.quote.issueDate);
         setQuoteCurrency(detail.quote.currency);
-        setLines(detail.items.map((item) => ({ ...item, rowId: crypto.randomUUID() })));
+        setLines((detail.manualItems ?? detail.items).map((item) => ({ ...item, rowId: crypto.randomUUID() })));
+        setMaterialGroups(detail.materialGroups ?? []);
         setDiscount(detail.commercial.discountPercent);
         setTaxPercent(detail.commercial.taxPercent);
         setOverheadPercent(detail.commercial.overheadPercent);
@@ -2627,10 +2640,16 @@ function QuoteDialog({
     });
   };
   const save = async () => {
-    if (!client || !project.trim() || !lines.length) {
+    if (!client || !project.trim() || (!lines.length && !materialGroups.length)) {
       toast.error("Seleccione cliente, proyecto y al menos una partida.");
       return;
     }
+    const validatedGroups = materialGroupsSchema.safeParse(materialGroups);
+    if (!validatedGroups.success) {
+      toast.error(`Revise las listas: ${validatedGroups.error.issues[0]?.message || "Datos incompletos"}`);
+      return;
+    }
+    if (materialCalculationError) return toast.error(materialCalculationError);
     const payload = {
       publicId: quote?.publicId || crypto.randomUUID(),
       ...(quote ? { expectedUpdatedAt: quote.updatedAt } : {}),
@@ -2644,6 +2663,7 @@ function QuoteDialog({
       paymentTerms,
       deliveryTerms,
       notes,
+      materialGroups: validatedGroups.data,
       items: lines.map((line) => ({
         name: line.name,
         detail: line.detail,
@@ -2712,9 +2732,9 @@ function QuoteDialog({
             <select
               value={quoteCurrency}
               onChange={(event) => {
-                if (!lines.length) setQuoteCurrency(event.target.value);
+                if (!lines.length && !materialGroups.length) setQuoteCurrency(event.target.value);
                 else
-                  toast.error("Quite las partidas antes de cambiar la moneda.");
+                  toast.error("Quite las partidas y listas antes de cambiar la moneda.");
               }}
               className="h-10 w-full rounded-md border bg-white px-3 text-sm"
             >
@@ -2830,6 +2850,8 @@ function QuoteDialog({
             </div>
           )}
         </div>
+        <MaterialGroupsEditor groups={materialGroups} onChange={setMaterialGroups} catalog={data.catalogItems} currency={quoteCurrency} economic={economic} />
+        {materialCalculationError && <p role="alert" className="text-sm text-red-700">{materialCalculationError}</p>}
         <div className="grid gap-4 md:grid-cols-[1fr_320px]">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Metric
@@ -2899,7 +2921,7 @@ function QuoteDialog({
           </Button>
           <Button
             onClick={save}
-            disabled={saving || !lines.length}
+            disabled={saving || (!lines.length && !materialGroups.length) || Boolean(materialCalculationError)}
             className="bg-amber-400 text-slate-950 hover:bg-amber-300"
           >
             {saving ? (
@@ -3112,6 +3134,7 @@ function QuoteFlowDialog({
                 )}
               </div>
             </div>
+            {canDocument && <QuoteMaterialsPanel key={quote.publicId} quotePublicId={quote.publicId} quoteNumber={quote.number} />}
             {canDocument && (
               <DocumentsPanel
                 entityType="quote"
@@ -4471,6 +4494,8 @@ function DocumentsPanel({
                   SHA-256 {document.sha256.slice(0, 16)}…
                 </div>
               </div>
+              <div className="flex shrink-0 gap-1">
+              {entityType === "quote" && <DocumentShare documentId={document.publicId} fileName={document.fileName} />}
               <Button asChild variant="outline" size="icon-sm">
                 <a
                   href={`/api/documents/${document.publicId}`}
@@ -4480,6 +4505,7 @@ function DocumentsPanel({
                   <Download />
                 </a>
               </Button>
+              </div>
             </div>
           ))
         ) : (
