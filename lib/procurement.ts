@@ -16,10 +16,11 @@ export function purchaseTotals(
   items: Array<{ quantity: number; unitCost: number }>,
   discountPercent = 0,
   taxPercent = 19,
+  dispatchNet = 0,
 ) {
   const subtotal = roundMoney(items.reduce((sum, item) => sum + Math.max(0, finite(item.quantity)) * Math.max(0, finite(item.unitCost)), 0));
   const discountAmount = roundMoney(subtotal * Math.min(100, Math.max(0, finite(discountPercent))) / 100);
-  const netSubtotal = roundMoney(subtotal - discountAmount);
+  const netSubtotal = roundMoney(subtotal - discountAmount + Math.max(0, finite(dispatchNet)));
   const taxAmount = roundMoney(netSubtotal * Math.min(100, Math.max(0, finite(taxPercent))) / 100);
   return { subtotal, discountAmount, netSubtotal, taxAmount, total: roundMoney(netSubtotal + taxAmount) };
 }

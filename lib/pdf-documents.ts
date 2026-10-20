@@ -73,7 +73,7 @@ export type SupplierPdfData = {
 };
 export type PurchasePdfData = {
   number: string; status: string; currency: string; supplier: string; notes: string; createdAt: string;
-  subtotal: string; discountAmount: string; discountPercent: string; netSubtotal: string;
+  dispatchNet?: string; subtotal: string; discountAmount: string; discountPercent: string; netSubtotal: string;
   taxAmount: string; taxPercent: string; total: string; approvedBy: string; approvedAt: string;
   approvalNotes: string; orderedBy: string; orderedAt: string; workOrderNumber?: string; project?: string;
 };
@@ -427,7 +427,7 @@ export function buildPurchaseOrderPdf(input: { company: CompanyData; supplier: S
   pdf.text(page, "TOTAL", PAGE_WIDTH - MARGIN - 7, y - 10, 7.5, true, SLATE, "right");
   y -= 28;
   for (const item of items) {
-    const lines = wrapText(item.description, 285, 8.5).slice(0, 3);
+    const lines = wrapText(item.description, 285, 8.5);
     const rowHeight = Math.max(28, lines.length * 11 + 10);
     if (y - rowHeight < 165) {
       page = pdf.addPage();
@@ -442,7 +442,7 @@ export function buildPurchaseOrderPdf(input: { company: CompanyData; supplier: S
     pdf.line(page, MARGIN, y - rowHeight, PAGE_WIDTH - MARGIN, y - rowHeight);
     y -= rowHeight;
   }
-  if (y < 270) {
+  if (y < 400) {
     page = pdf.addPage();
     drawHeader(pdf, page, company, "ORDEN DE COMPRA", purchase.number, "Resumen y aprobación");
     y = PAGE_HEIGHT - 159;
@@ -450,6 +450,7 @@ export function buildPurchaseOrderPdf(input: { company: CompanyData; supplier: S
   const totals = [
     ["Subtotal", money(purchase.subtotal, purchase.currency)],
     [`Descuento (${Number(purchase.discountPercent || 0)}%)`, money(purchase.discountAmount, purchase.currency)],
+    ...(Number(purchase.dispatchNet || 0) ? [["Despacho neto", money(purchase.dispatchNet || "0", purchase.currency)]] : []),
     ["Neto", money(purchase.netSubtotal, purchase.currency)],
     [`Impuesto (${Number(purchase.taxPercent || 0)}%)`, money(purchase.taxAmount, purchase.currency)],
   ];
@@ -457,7 +458,7 @@ export function buildPurchaseOrderPdf(input: { company: CompanyData; supplier: S
     pdf.text(page, label, 340, y - index * 19, 8.5, false, SLATE);
     pdf.text(page, value, PAGE_WIDTH - MARGIN, y - index * 19, 9, true, NAVY, "right");
   });
-  const totalY = y - 82;
+  const totalY = y - (totals.length * 19 + 6);
   pdf.rect(page, 332, totalY - 18, PAGE_WIDTH - MARGIN - 332, 32, NAVY);
   pdf.text(page, "TOTAL", 340, totalY - 7, 9, true, [1, 1, 1]);
   pdf.text(page, money(purchase.total, purchase.currency), PAGE_WIDTH - MARGIN - 8, totalY - 7, 12, true, AMBER, "right");
@@ -465,9 +466,18 @@ export function buildPurchaseOrderPdf(input: { company: CompanyData; supplier: S
   pdf.text(page, "APROBACIÓN INTERNA", MARGIN, approvalY, 8, true, SLATE);
   pdf.text(page, `${purchase.approvedBy || "Pendiente"}${purchase.approvedAt ? ` · ${purchase.approvedAt.slice(0, 16).replace("T", " ")}` : ""}`, MARGIN, approvalY - 17, 9, true);
   if (purchase.approvalNotes) wrapText(purchase.approvalNotes, 250, 8).slice(0, 3).forEach((line, index) => pdf.text(page, line, MARGIN, approvalY - 34 - index * 11, 8, false, SLATE));
-  const notesY = approvalY - 82;
+  let notesY = approvalY - 82;
   pdf.text(page, "OBSERVACIONES", MARGIN, notesY, 8, true, SLATE);
-  wrapText(purchase.notes || "Sin observaciones.", PAGE_WIDTH - MARGIN * 2, 8).slice(0, 4).forEach((line, index) => pdf.text(page, line, MARGIN, notesY - 17 - index * 11, 8));
+  notesY -= 17;
+  for (const line of wrapText(purchase.notes || "Sin observaciones.", PAGE_WIDTH - MARGIN * 2, 8)) {
+    if (notesY < 90) {
+      page = pdf.addPage();
+      drawHeader(pdf, page, company, "ORDEN DE COMPRA", purchase.number, "Condiciones de suministro");
+      notesY = PAGE_HEIGHT - 159;
+    }
+    pdf.text(page, line, MARGIN, notesY, 8);
+    notesY -= 11;
+  }
   pdf.text(page, "Documento interno de abastecimiento. Los costos se cargan a la orden al entregar el material, no al recibir la compra.", MARGIN, 49, 7.5, false, SLATE);
   pdf.pages.forEach((currentPage, index) => drawFooter(pdf, currentPage, company, index + 1, pdf.pages.length));
   return pdf.toBytes();

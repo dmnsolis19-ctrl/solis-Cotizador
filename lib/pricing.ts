@@ -1,4 +1,6 @@
 export type QuoteLine = {
+  sourceBundleId?: string;
+  sourceCatalogItemPublicId?: string;
   name: string;
   detail?: string;
   quantity: number;
