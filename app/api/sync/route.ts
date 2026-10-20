@@ -10,6 +10,9 @@ import { PATCH as updateOrder } from "@/app/api/orders/route";
 import { POST as updateExecution } from "@/app/api/order-execution/route";
 import { POST as createMaterialRequest } from "@/app/api/material-requests/route";
 
+import { POST as saveBundle } from "@/app/api/catalog-bundles/route";
+import { POST as saveComparison } from "@/app/api/supplier-comparisons/route";
+
 async function hashPayload(payload: Record<string, unknown>) {
   const bytes = new TextEncoder().encode(JSON.stringify(payload));
   const digest = await crypto.subtle.digest("SHA-256", bytes.buffer);
@@ -23,7 +26,7 @@ export async function POST(request: Request) {
     const session = await requirePermission(({
       "client.create": "clients.write",
       "client.update": "clients.write",
-      "catalog.create": "catalog.write",
+      "catalog.create": "catalog.write", "bundle.save": "catalog.write", "comparison.save": "purchases.manage",
       "quote.create": "quotes.write",
       "quote.update": "quotes.write",
       "order.update": "orders.write",
@@ -56,6 +59,8 @@ export async function POST(request: Request) {
       "client.create": createClient,
       "client.update": updateClient,
       "catalog.create": createCatalogItem,
+      "bundle.save": saveBundle,
+      "comparison.save": saveComparison,
       "quote.create": createQuote,
       "quote.update": updateQuote,
       "order.update": updateOrder,

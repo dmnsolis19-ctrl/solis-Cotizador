@@ -132,6 +132,10 @@ import { calculateQuote, type QuoteLine } from "@/lib/pricing";
 import { cachedQuoteDetail, overlayOfflineExecution } from "@/lib/offline-records";
 import { AccountingPanel } from "@/components/accounting-panel";
 import { OrderMaterialsPanel } from "@/components/order-materials-panel";
+import { CatalogImportPanel } from "@/components/catalog-import-panel";
+import { CatalogBundlesPanel, BundlePicker } from "@/components/catalog-bundles-panel";
+import { LaborPanel } from "@/components/labor-panel";
+import { SupplierComparisonPanel } from "@/components/supplier-comparison-panel";
 import { PriceReferencePanel } from "@/components/price-reference-panel";
 import { CompanySettingsPanel } from "@/components/company-settings-panel";
 import { APP_VERSION } from "@/lib/app-version";
@@ -321,7 +325,7 @@ type InventoryAllocation = { publicId: string; materialRequestPublicId: string; 
 type InventoryRequest = MaterialRequest & { workOrderPublicId: string; order?: { publicId: string; number: string; clientName: string; project: string }; allocations: InventoryAllocation[] };
 type Supplier = { publicId: string; code: string; name: string; taxId: string; contactName: string; email: string; phone: string; address: string; paymentTerms: string; currency: string; active: boolean };
 type PurchaseItem = { publicId: string; catalogItemPublicId: string; description: string; quantity: number; unit: string; unitCost: number; lineTotal: number; receivedQuantity: number };
-type PurchaseRequest = { publicId: string; number: string; materialRequestPublicId: string; workOrderPublicId: string; warehousePublicId: string; status: string; supplierPublicId: string; supplier: string; currency: string; discountPercent: number; taxPercent: number; subtotal: number; discountAmount: number; netSubtotal: number; taxAmount: number; total: number; notes: string; approvedBy: string; approvedAt: string; orderedAt: string; createdAt: string; order?: { publicId: string; number: string; clientName: string; project: string }; items: PurchaseItem[] };
+type PurchaseRequest = { updatedAt?: string; dispatchNet?: number | string; publicId: string; number: string; materialRequestPublicId: string; workOrderPublicId: string; warehousePublicId: string; status: string; supplierPublicId: string; supplier: string; currency: string; discountPercent: number; taxPercent: number; subtotal: number; discountAmount: number; netSubtotal: number; taxAmount: number; total: number; notes: string; approvedBy: string; approvedAt: string; orderedAt: string; createdAt: string; order?: { publicId: string; number: string; clientName: string; project: string }; items: PurchaseItem[] };
 type InventoryMovement = { publicId: string; warehousePublicId: string; catalogItemPublicId: string; movementType: string; quantity: number; stockBefore: number; stockAfter: number; reservedBefore: number; reservedAfter: number; reference: string; reason: string; actor: string; createdAt: string };
 type InventoryCatalogOption = { publicId: string; code: string; name: string; unit: string; type: string; unitCost: number };
 type InventoryData = { warehouses: InventoryWarehouse[]; balances: InventoryBalance[]; movements: InventoryMovement[]; materialRequests: InventoryRequest[]; purchases: PurchaseRequest[]; suppliers: Supplier[]; catalogItems: InventoryCatalogOption[]; canManage: boolean; canManagePurchases: boolean; canApprovePurchases: boolean; canDocumentPurchases: boolean };
@@ -1115,13 +1119,13 @@ export default function CotizadorApp() {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className="min-w-0 bg-[#f4f6f8]">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-white/95 px-4 backdrop-blur md:px-7">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-20 flex min-h-16 flex-wrap items-center gap-2 py-2 justify-between border-b bg-white/95 px-4 backdrop-blur md:px-7">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <SidebarTrigger>
               <Menu />
             </SidebarTrigger>
             <div>
-              <div className="text-sm font-semibold text-slate-900">
+              <div className="max-w-28 truncate text-sm font-semibold text-slate-900 sm:max-w-none">
                 {nav.find((item) => item.id === section)?.label}
               </div>
               <div className="hidden text-xs text-slate-500 sm:block">
@@ -1129,7 +1133,7 @@ export default function CotizadorApp() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
             {can("notifications.read") && (
               <Button
                 variant="outline"
@@ -1157,8 +1161,9 @@ export default function CotizadorApp() {
               }
             >
               {online ? <Cloud /> : <WifiOff />}
+              <span className="sr-only">{online ? "Conexión en línea. " : "Sin conexión. "}</span>
               {queueStatus.pending
-                ? `${queueStatus.pending} pendiente${queueStatus.pending === 1 ? "" : "s"}`
+                ? `${online ? "En línea" : "Offline"} · ${queueStatus.pending} pendiente${queueStatus.pending === 1 ? "" : "s"}`
                 : online
                   ? "En línea"
                   : "Offline"}
@@ -1177,6 +1182,7 @@ export default function CotizadorApp() {
               <Button
                 onClick={() => { setEditingQuote(null); setQuoteOpen(true); }}
                 className="bg-blue-600 text-white hover:bg-blue-700"
+                aria-label="Nueva cotización"
               >
                 <Plus />
                 <span className="hidden sm:inline">Nueva cotización</span>
@@ -1285,7 +1291,7 @@ export default function CotizadorApp() {
                 />
               )}
               {section === "catalog" && (
-                <div className="space-y-5"><PriceReferencePanel online={online} canImport={can("catalog.write")} existingCodes={data.catalogItems.map((item) => item.code)} onImported={refresh} /><CatalogTable items={filteredCatalog} onEdit={can("catalog.write") ? (item) => { setEditingCatalog(item); setCatalogOpen(true); } : undefined} /></div>
+                <div className="space-y-5">{can("catalog.write") && <CatalogImportPanel online={online} onImported={refresh} />}<CatalogBundlesPanel catalog={data.catalogItems} canWrite={can("catalog.write")} onQueued={() => void updateQueueStatus()} /><LaborPanel canWrite={can("catalog.write")} existingCodes={data.catalogItems.map(i => i.code)} onSaved={refresh} onQueued={() => void updateQueueStatus()} /><PriceReferencePanel online={online} canImport={can("catalog.write")} existingCodes={data.catalogItems.map((item) => item.code)} onImported={refresh} /><CatalogTable items={filteredCatalog} onEdit={can("catalog.write") ? (item) => { setEditingCatalog(item); setCatalogOpen(true); } : undefined} /></div>
               )}
               {section === "orders" && (
                 <OrdersTable
@@ -1297,7 +1303,7 @@ export default function CotizadorApp() {
                   }
                 />
               )}
-              {section === "inventory" && <InventoryPanel online={online} />}
+              {section === "inventory" && <InventoryPanel online={online} onQueued={() => void updateQueueStatus()} />}
             </section>
           )}
         </main>
@@ -1845,7 +1851,7 @@ function ClientsTable({ clients, onEdit }: { clients: Client[]; onEdit?: (client
 function CatalogTable({ items, onEdit }: { items: CatalogItem[]; onEdit?: (item: CatalogItem) => void }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
-      <Table>
+      <Table className="mobile-card-table">
         <TableHeader>
           <TableRow className="bg-slate-50">
             <TableHead>Código</TableHead>
@@ -1861,27 +1867,27 @@ function CatalogTable({ items, onEdit }: { items: CatalogItem[]; onEdit?: (item:
           {items.length ? (
             items.map((i) => (
               <TableRow key={i.publicId}>
-                <TableCell className="font-mono text-xs font-semibold">
+                <TableCell data-label="Código" className="font-mono text-xs font-semibold">
                   {i.code}
                 </TableCell>
-                <TableCell>
+                <TableCell data-label="Descripción">
                   <div className="font-medium">{i.name}</div>
                   <div className="text-xs text-slate-500">
                     {i.category}
                     {i.supplier ? ` · ${i.supplier}` : ""}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell data-label="Tipo">
                   <Badge variant="secondary">{i.type}</Badge>
                 </TableCell>
-                <TableCell>{i.unit}</TableCell>
-                <TableCell className="bg-blue-50/60 text-right font-medium text-blue-800">
+                <TableCell data-label="Unidad">{i.unit}</TableCell>
+                <TableCell data-label="Costo interno neto" className="bg-blue-50/60 text-right font-medium text-blue-800">
                   {money(i.unitCost, i.currency)}
                 </TableCell>
-                <TableCell className="text-right font-semibold">
+                <TableCell data-label="Precio venta neto" className="text-right font-semibold">
                   {money(i.unitPrice, i.currency)}
                 </TableCell>
-                {onEdit && <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => onEdit(i)}><PenLine />Editar</Button></TableCell>}
+                {onEdit && <TableCell data-label="Acciones" className="text-right"><Button size="sm" variant="outline" onClick={() => onEdit(i)}><PenLine />Editar</Button></TableCell>}
               </TableRow>
             ))
           ) : (
@@ -2648,6 +2654,10 @@ function QuoteDialog({
       (entry) => entry.publicId === catalogId,
     );
     if (!item) return;
+    if (lines.some(line => line.sourceCatalogItemPublicId === item.publicId || (line.name === item.name && line.unit === item.unit)) || materialGroups.some(group => group.materials.some(material => material.catalogItemPublicId === item.publicId))) {
+      toast.error("Ese código ya está incluido. Edite su cantidad para evitar cobrarlo dos veces.");
+      return;
+    }
     if (item.currency !== quoteCurrency) {
       toast.error(
         `El ítem está en ${item.currency}; la cotización está en ${quoteCurrency}. No se realizará una conversión automática.`,
@@ -2661,6 +2671,7 @@ function QuoteDialog({
         name: item.name,
         detail: item.description,
         quantity: 1,
+        sourceCatalogItemPublicId: item.publicId,
         unit: item.unit,
         unitCost: Number(item.unitCost),
         unitPrice: Number(item.unitPrice),
@@ -2725,6 +2736,8 @@ function QuoteDialog({
         unit: line.unit,
         unitCost: line.unitCost,
         unitPrice: line.unitPrice,
+        sourceBundleId: line.sourceBundleId,
+        sourceCatalogItemPublicId: line.sourceCatalogItemPublicId,
       })),
     };
     setSaving(true);
@@ -2826,7 +2839,7 @@ function QuoteDialog({
             </Button>
           </div>
           {lines.length ? (
-            <Table className="min-w-[1020px] table-fixed">
+            <Table className="quote-lines-table min-w-[1020px] table-fixed">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[330px]">Partida</TableHead>
@@ -2841,7 +2854,7 @@ function QuoteDialog({
               <TableBody>
                 {lines.map((line, index) => (
                   <TableRow key={line.rowId}>
-                    <TableCell className="whitespace-normal">
+                    <TableCell data-label="Partida" className="whitespace-normal">
                       <Input
                         value={line.name}
                         onChange={(event) => updateLine(index, { name: event.target.value })}
@@ -2856,7 +2869,7 @@ function QuoteDialog({
                         aria-label={`Detalle de partida ${index + 1}`}
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Cantidad">
                       <Input
                         type="number"
                         min="0.01"
@@ -2866,19 +2879,19 @@ function QuoteDialog({
                         className="w-full min-w-0 bg-white"
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Unidad">
                       <Input value={line.unit} onChange={(event) => updateLine(index, { unit: event.target.value })} className="w-full min-w-0 bg-white" aria-label={`Unidad de partida ${index + 1}`} />
                     </TableCell>
-                    <TableCell className="bg-blue-50 text-blue-800">
+                    <TableCell data-label="Costo neto" className="bg-blue-50 text-blue-800">
                       <Input type="number" min="0" step="0.01" value={line.unitCost} onChange={(event) => updateLine(index, { unitCost: Number(event.target.value) })} className="w-full min-w-0 bg-white" aria-label={`Costo unitario de partida ${index + 1}`} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Venta neta">
                       <Input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(event) => updateLine(index, { unitPrice: Number(event.target.value) })} className="w-full min-w-0 bg-white" aria-label={`Precio unitario de partida ${index + 1}`} />
                     </TableCell>
-                    <TableCell className="text-right font-medium">
+                    <TableCell data-label="Subtotal" className="text-right font-medium">
                       {money(line.quantity * line.unitPrice, quoteCurrency)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-label="Acciones">
                       <div className="flex justify-end gap-1">
                         <Button type="button" variant="ghost" size="icon-xs" onClick={() => moveLine(index, -1)} disabled={index === 0} aria-label="Mover partida arriba"><ArrowUp /></Button>
                         <Button type="button" variant="ghost" size="icon-xs" onClick={() => moveLine(index, 1)} disabled={index === lines.length - 1} aria-label="Mover partida abajo"><ArrowDown /></Button>
@@ -2904,7 +2917,8 @@ function QuoteDialog({
             </div>
           )}
         </div>
-        <MaterialGroupsEditor groups={materialGroups} onChange={setMaterialGroups} catalog={data.catalogItems} currency={quoteCurrency} economic={economic} />
+        <BundlePicker currency={quoteCurrency} existing={lines} groupedCatalogIds={materialGroups.flatMap(g => g.materials.map(m => m.catalogItemPublicId))} onApply={copies => setLines(current => [...current, ...copies.map(line => ({ ...line, rowId: crypto.randomUUID() }))])} />
+        <MaterialGroupsEditor groups={materialGroups} onChange={setMaterialGroups} catalog={data.catalogItems.filter(item => !lines.some(line => line.sourceCatalogItemPublicId === item.publicId))} currency={quoteCurrency} economic={economic} />
         {materialCalculationError && <p role="alert" className="text-sm text-red-700">{materialCalculationError}</p>}
         <div className="grid gap-4 md:grid-cols-[1fr_320px]">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -3375,7 +3389,7 @@ function QueueDialog({
   );
 }
 
-function InventoryPanel({ online }: { online: boolean }) {
+function InventoryPanel({ online, onQueued }: { online: boolean; onQueued(): void }) {
   const [data, setData] = useState<InventoryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -3403,6 +3417,7 @@ function InventoryPanel({ online }: { online: boolean }) {
   const [purchaseSupplier, setPurchaseSupplier] = useState("");
   const [purchaseCurrency, setPurchaseCurrency] = useState("CLP");
   const [purchaseDiscount, setPurchaseDiscount] = useState("0");
+  const [purchaseDispatch, setPurchaseDispatch] = useState("0");
   const [purchaseTax, setPurchaseTax] = useState("19");
   const [purchaseNotes, setPurchaseNotes] = useState("");
   const [purchaseCosts, setPurchaseCosts] = useState<Record<string, string>>({});
@@ -3473,7 +3488,7 @@ function InventoryPanel({ online }: { online: boolean }) {
   };
 
   const openPurchase = (purchase: PurchaseRequest) => {
-    setEditingPurchase(purchase); setPurchaseSupplier(purchase.supplierPublicId || ""); setPurchaseCurrency(purchase.currency || "CLP"); setPurchaseDiscount(String(purchase.discountPercent || 0)); setPurchaseTax(String(purchase.taxPercent ?? 19)); setPurchaseNotes(purchase.notes || "");
+    setEditingPurchase(purchase); setPurchaseSupplier(purchase.supplierPublicId || ""); setPurchaseCurrency(purchase.currency || "CLP"); setPurchaseDiscount(String(purchase.discountPercent || 0)); setPurchaseTax(String(purchase.taxPercent ?? 19)); setPurchaseNotes(purchase.notes || ""); setPurchaseDispatch(String(purchase.dispatchNet || 0));
     setPurchaseCosts(Object.fromEntries(purchase.items.map((item) => [item.publicId, String(item.unitCost || data?.catalogItems.find((catalog) => catalog.publicId === item.catalogItemPublicId)?.unitCost || 0)])));
   };
 
@@ -3481,7 +3496,7 @@ function InventoryPanel({ online }: { online: boolean }) {
     if (!editingPurchase || !purchaseSupplier) return toast.error("Seleccione un proveedor.");
     const items = editingPurchase.items.map((item) => ({ publicId: item.publicId, unitCost: Number(purchaseCosts[item.publicId] || 0) }));
     if (items.some((item) => !Number.isFinite(item.unitCost) || item.unitCost < 0)) return toast.error("Revise los costos unitarios.");
-    const saved = await perform({ action: "prepare_purchase", purchaseRequestPublicId: editingPurchase.publicId, supplierPublicId: purchaseSupplier, currency: purchaseCurrency, discountPercent: Number(purchaseDiscount || 0), taxPercent: Number(purchaseTax || 0), notes: purchaseNotes, items }, "Orden de compra preparada para aprobación.");
+    const saved = await perform({ action: "prepare_purchase", purchaseRequestPublicId: editingPurchase.publicId, supplierPublicId: purchaseSupplier, currency: purchaseCurrency, dispatchNet: Number(purchaseDispatch || 0), discountPercent: Number(purchaseDiscount || 0), taxPercent: Number(purchaseTax || 0), notes: purchaseNotes, items }, "Orden de compra preparada para aprobación.");
     if (saved) setEditingPurchase(null);
   };
 
@@ -3526,7 +3541,7 @@ function InventoryPanel({ online }: { online: boolean }) {
   const warehouseNameById = new Map(data.warehouses.map((warehouse) => [warehouse.publicId, warehouse.name]));
   const balanceNameByKey = new Map(data.balances.map((balance) => [`${balance.warehousePublicId}:${balance.catalogItemPublicId}`, balance.itemName]));
   const movementLabels: Record<string, string> = { RECEIPT: "Entrada", ADJUSTMENT: "Ajuste", RESERVATION: "Reserva", RELEASE: "Liberación", ISSUE: "Entrega", RETURN: "Devolución" };
-  const editingTotals = purchaseTotals(editingPurchase?.items.map((item) => ({ quantity: item.quantity, unitCost: Number(purchaseCosts[item.publicId] || 0) })) || [], Number(purchaseDiscount || 0), Number(purchaseTax || 0));
+  const editingTotals = purchaseTotals(editingPurchase?.items.map((item) => ({ quantity: item.quantity, unitCost: Number(purchaseCosts[item.publicId] || 0) })) || [], Number(purchaseDiscount || 0), Number(purchaseTax || 0), Number(purchaseDispatch || 0));
 
   return (
     <div className="space-y-5">
@@ -3537,6 +3552,7 @@ function InventoryPanel({ online }: { online: boolean }) {
         <ExecutionMetric label="Alertas de stock" value={String(lowStock)} icon={AlertTriangle} />
       </div>
       {!online && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">El inventario se muestra en modo consulta. Reservas, entregas, devoluciones y compras requieren conexión para evitar saldos duplicados.</div>}
+      {data.canManagePurchases && <SupplierComparisonPanel purchases={data.purchases} suppliers={data.suppliers} online={online} onChanged={() => void load()} onQueued={onQueued} />}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="grid h-auto w-full grid-cols-2 gap-1 lg:grid-cols-5">
           <TabsTrigger value="stock"><Warehouse /> Existencias</TabsTrigger>
@@ -3589,7 +3605,7 @@ function InventoryPanel({ online }: { online: boolean }) {
       </Tabs>
       <Dialog open={Boolean(adjusting)} onOpenChange={(open) => { if (!open) setAdjusting(null); }}><DialogContent><DialogHeader><DialogTitle>Ajustar existencia</DialogTitle><DialogDescription>El ajuste queda registrado; no reemplaza ni elimina movimientos anteriores.</DialogDescription></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><FieldControlled label="Saldo físico" value={adjustQuantity} onChange={setAdjustQuantity} type="number" /><FieldControlled label="Stock mínimo" value={adjustMinimum} onChange={setAdjustMinimum} type="number" /><div className="sm:col-span-2"><FieldControlled label="Motivo obligatorio" value={adjustReason} onChange={setAdjustReason} placeholder="Conteo físico, merma o corrección documentada" /></div></div><DialogFooter><Button variant="outline" onClick={() => setAdjusting(null)}>Cancelar</Button><Button onClick={() => void saveAdjustment()} disabled={working || !online}>Guardar ajuste</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={Boolean(returning)} onOpenChange={(open) => { if (!open) setReturning(null); }}><DialogContent><DialogHeader><DialogTitle>Devolver material</DialogTitle><DialogDescription>La devolución repone existencias y conserva el vínculo con la orden.</DialogDescription></DialogHeader><div className="space-y-3"><FieldControlled label="Cantidad" value={returnQuantity} onChange={setReturnQuantity} type="number" /><FieldControlled label="Motivo" value={returnReason} onChange={setReturnReason} placeholder="Sobrante sin uso, cambio de alcance…" /></div><DialogFooter><Button variant="outline" onClick={() => setReturning(null)}>Cancelar</Button><Button onClick={() => void returnMaterial()} disabled={working || !online}><RotateCcw /> Confirmar devolución</Button></DialogFooter></DialogContent></Dialog>
-      <Dialog open={Boolean(editingPurchase)} onOpenChange={(open) => { if (!open) setEditingPurchase(null); }}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>Preparar orden de compra · {editingPurchase?.number}</DialogTitle><DialogDescription>Seleccione el proveedor e ingrese los costos cotizados. La aprobación congelará estos valores.</DialogDescription></DialogHeader>{editingPurchase && <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><div className="space-y-2 sm:col-span-2"><Label>Proveedor</Label><select value={purchaseSupplier} onChange={(event) => { setPurchaseSupplier(event.target.value); const supplier = data.suppliers.find((item) => item.publicId === event.target.value); if (supplier) setPurchaseCurrency(supplier.currency); }} className="h-10 w-full rounded-md border bg-white px-3 text-sm"><option value="">Seleccione</option>{data.suppliers.filter((supplier) => supplier.active).map((supplier) => <option key={supplier.publicId} value={supplier.publicId}>{supplier.code} · {supplier.name}</option>)}</select></div><div className="space-y-2"><Label>Moneda</Label><select value={purchaseCurrency} onChange={(event) => setPurchaseCurrency(event.target.value)} className="h-10 w-full rounded-md border bg-white px-3 text-sm">{["CLP", "USD", "EUR", "UF"].map((currency) => <option key={currency}>{currency}</option>)}</select></div></div><div className="overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>Partida</TableHead><TableHead className="text-right">Cantidad</TableHead><TableHead className="text-right">Costo unitario</TableHead><TableHead className="text-right">Total</TableHead></TableRow></TableHeader><TableBody>{editingPurchase.items.map((item) => { const unitCost = Number(purchaseCosts[item.publicId] || 0); return <TableRow key={item.publicId}><TableCell>{item.description}<div className="text-xs text-slate-500">{item.unit}</div></TableCell><TableCell className="text-right">{item.quantity}</TableCell><TableCell><Input type="number" min="0" step="0.01" value={purchaseCosts[item.publicId] || "0"} onChange={(event) => setPurchaseCosts((current) => ({ ...current, [item.publicId]: event.target.value }))} className="ml-auto w-36 text-right" /></TableCell><TableCell className="text-right font-medium">{money(item.quantity * unitCost, purchaseCurrency)}</TableCell></TableRow>; })}</TableBody></Table></div><div className="grid gap-3 sm:grid-cols-3"><FieldControlled label="Descuento %" value={purchaseDiscount} onChange={setPurchaseDiscount} type="number" /><FieldControlled label="Impuesto %" value={purchaseTax} onChange={setPurchaseTax} type="number" /><div className="rounded-xl bg-slate-950 p-3 text-white"><div className="text-xs text-slate-400">Total orden</div><div className="text-xl font-bold text-amber-300">{money(editingTotals.total, purchaseCurrency)}</div></div></div><FieldControlled label="Notas al proveedor" value={purchaseNotes} onChange={setPurchaseNotes} placeholder="Plazo, despacho, referencia de oferta…" /></div>}<DialogFooter><Button variant="outline" onClick={() => setEditingPurchase(null)}>Cancelar</Button><Button onClick={() => void savePurchase()} disabled={working || !online || !purchaseSupplier}>Guardar para aprobación</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={Boolean(editingPurchase)} onOpenChange={(open) => { if (!open) setEditingPurchase(null); }}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>Preparar orden de compra · {editingPurchase?.number}</DialogTitle><DialogDescription>Seleccione el proveedor e ingrese los costos cotizados. La aprobación congelará estos valores.</DialogDescription></DialogHeader>{editingPurchase && <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><div className="space-y-2 sm:col-span-2"><Label>Proveedor</Label><select value={purchaseSupplier} onChange={(event) => { setPurchaseSupplier(event.target.value); const supplier = data.suppliers.find((item) => item.publicId === event.target.value); if (supplier) setPurchaseCurrency(supplier.currency); }} className="h-10 w-full rounded-md border bg-white px-3 text-sm"><option value="">Seleccione</option>{data.suppliers.filter((supplier) => supplier.active).map((supplier) => <option key={supplier.publicId} value={supplier.publicId}>{supplier.code} · {supplier.name}</option>)}</select></div><div className="space-y-2"><Label>Moneda</Label><select value={purchaseCurrency} onChange={(event) => setPurchaseCurrency(event.target.value)} className="h-10 w-full rounded-md border bg-white px-3 text-sm">{["CLP", "USD", "EUR", "UF"].map((currency) => <option key={currency}>{currency}</option>)}</select></div></div><div className="overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>Partida</TableHead><TableHead className="text-right">Cantidad</TableHead><TableHead className="text-right">Costo unitario</TableHead><TableHead className="text-right">Total</TableHead></TableRow></TableHeader><TableBody>{editingPurchase.items.map((item) => { const unitCost = Number(purchaseCosts[item.publicId] || 0); return <TableRow key={item.publicId}><TableCell>{item.description}<div className="text-xs text-slate-500">{item.unit}</div></TableCell><TableCell className="text-right">{item.quantity}</TableCell><TableCell><Input type="number" min="0" step="0.01" value={purchaseCosts[item.publicId] || "0"} onChange={(event) => setPurchaseCosts((current) => ({ ...current, [item.publicId]: event.target.value }))} className="ml-auto w-36 text-right" /></TableCell><TableCell className="text-right font-medium">{money(item.quantity * unitCost, purchaseCurrency)}</TableCell></TableRow>; })}</TableBody></Table></div><div className="grid gap-3 sm:grid-cols-3"><FieldControlled label="Despacho neto" value={purchaseDispatch} onChange={setPurchaseDispatch} type="number" /><FieldControlled label="Descuento %" value={purchaseDiscount} onChange={setPurchaseDiscount} type="number" /><FieldControlled label="Impuesto %" value={purchaseTax} onChange={setPurchaseTax} type="number" /><div className="rounded-xl bg-slate-950 p-3 text-white"><div className="text-xs text-slate-400">Total orden</div><div className="text-xl font-bold text-amber-300">{money(editingTotals.total, purchaseCurrency)}</div></div></div><FieldControlled label="Notas al proveedor" value={purchaseNotes} onChange={setPurchaseNotes} placeholder="Plazo, despacho, referencia de oferta…" /></div>}<DialogFooter><Button variant="outline" onClick={() => setEditingPurchase(null)}>Cancelar</Button><Button onClick={() => void savePurchase()} disabled={working || !online || !purchaseSupplier}>Guardar para aprobación</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={Boolean(receivingPurchase)} onOpenChange={(open) => { if (!open) setReceivingPurchase(null); }}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Recepción parcial · {receivingPurchase?.number}</DialogTitle><DialogDescription>Registre solamente lo recibido físicamente. El saldo pendiente quedará abierto.</DialogDescription></DialogHeader>{receivingPurchase && <div className="space-y-4"><FieldControlled label="Factura o guía" value={receiptDocument} onChange={setReceiptDocument} placeholder="F-12345 / GD-456" /><div className="overflow-x-auto rounded-lg border"><Table><TableHeader><TableRow><TableHead>Partida</TableHead><TableHead className="text-right">Pendiente</TableHead><TableHead className="text-right">Recibir ahora</TableHead></TableRow></TableHeader><TableBody>{receivingPurchase.items.filter((item) => item.receivedQuantity < item.quantity).map((item) => { const pending = item.quantity - item.receivedQuantity; return <TableRow key={item.publicId}><TableCell>{item.description}<div className="text-xs text-slate-500">{item.unit}</div></TableCell><TableCell className="text-right">{pending}</TableCell><TableCell><Input type="number" min="0" max={pending} step="0.01" value={receiptLines[item.publicId] || "0"} onChange={(event) => setReceiptLines((current) => ({ ...current, [item.publicId]: event.target.value }))} className="ml-auto w-32 text-right" /></TableCell></TableRow>; })}</TableBody></Table></div></div>}<DialogFooter><Button variant="outline" onClick={() => setReceivingPurchase(null)}>Cancelar</Button><Button onClick={() => void receivePurchase()} disabled={working || !online}><PackageCheck /> Confirmar recepción</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={Boolean(documentingPurchase)} onOpenChange={(open) => { if (!open) setDocumentingPurchase(null); }}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Documentos · {documentingPurchase?.number}</DialogTitle><DialogDescription>Emisiones internas versionadas de la orden de compra.</DialogDescription></DialogHeader>{documentingPurchase && <DocumentsPanel entityType="purchase_order" entityPublicId={documentingPurchase.publicId} actor="SOLIS" canGenerate={online} blockedMessage="Conéctese para emitir la orden de compra." />}</DialogContent></Dialog>
     </div>

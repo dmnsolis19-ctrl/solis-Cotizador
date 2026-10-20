@@ -5,11 +5,17 @@ import { catalogItems } from "@/db/schema";
 import { writeAuditEvent } from "@/lib/audit";
 import { authorizationResponse, requirePermission } from "@/lib/auth";
 
+import { normalizeCode } from "@/lib/catalog-import";
+import { laborEstimateSchema } from "@/lib/labor";
+
 const itemSchema = z.object({
   publicId: z.string().uuid().optional(),
+  internalCostStatus: z.enum(["pending", "confirmed"]).optional(),
+  laborEstimate: laborEstimateSchema.optional(),
+  laborReference: z.object({ source: z.string().max(180), sourceUrl: z.string().url().max(1000), checkedAt: z.string().date(), scope: z.string().max(2000), publishedPrice: z.number().min(0), includesVat: z.boolean() }).optional(),
   expectedUpdatedAt: z.string().optional(),
   priceDate: z.union([z.literal(""), z.string().date()]).default(""),
-  code: z.string().trim().min(1).max(80),
+  code: z.string().trim().min(1).max(80).transform(normalizeCode),
   type: z.enum(["Material", "Mano de obra", "Servicio"]),
   category: z.string().trim().default("General"),
   name: z.string().trim().min(2).max(240),
@@ -32,15 +38,15 @@ export async function POST(request: Request) {
     const [existing] = await db.select().from(catalogItems).where(eq(catalogItems.publicId, publicId)).limit(1);
     if (existing && existing.ownerEmail !== ownerEmail) return Response.json({ error: "El identificador del ítem pertenece a otro espacio." }, { status: 409 });
     if (existing && input.expectedUpdatedAt && input.expectedUpdatedAt !== existing.updatedAt) return Response.json({ error: "El material cambió en otro dispositivo. Actualice antes de guardar." }, { status: 409 });
-    const [sameCode] = await db.select({ publicId: catalogItems.publicId }).from(catalogItems).where(and(eq(catalogItems.ownerEmail, ownerEmail), eq(catalogItems.code, input.code))).limit(1);
+    const sameCode = (await db.select({ publicId: catalogItems.publicId, code: catalogItems.code }).from(catalogItems).where(eq(catalogItems.ownerEmail, ownerEmail))).find(row => normalizeCode(row.code) === input.code);
     if (sameCode && sameCode.publicId !== publicId) return Response.json({ error: "Ese código ya existe en la biblioteca." }, { status: 409 });
-    const { expectedUpdatedAt: _expectedUpdatedAt, priceDate, ...fields } = input;
+    const { expectedUpdatedAt: _expectedUpdatedAt, priceDate, laborEstimate, laborReference, internalCostStatus, ...fields } = input;
     void _expectedUpdatedAt;
     const previousPayload = JSON.parse(existing?.payloadJson || "{}");
     const record = {
       publicId, ownerEmail, ...fields,
       unitCost: String(input.unitCost), unitPrice: String(input.unitPrice),
-      payloadJson: JSON.stringify({ ...previousPayload, ...fields, priceDate }), updatedAt: new Date(Math.max(Date.now(), Date.parse(existing?.updatedAt || "") + 1 || 0)).toISOString(),
+      payloadJson: JSON.stringify({ ...previousPayload, ...fields, priceDate, ...(laborEstimate ? { laborEstimate } : {}), ...(laborReference ? { laborReference } : {}), ...(internalCostStatus ? { internalCostStatus } : {}) }), updatedAt: new Date(Math.max(Date.now(), Date.parse(existing?.updatedAt || "") + 1 || 0)).toISOString(),
     };
     if (existing) {
       const { publicId: _publicId, ownerEmail: _ownerEmail, ...changes } = record;

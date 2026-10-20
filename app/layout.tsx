@@ -1,5 +1,8 @@
-import type { Metadata } from "next";
+import { MobileViewport } from "@/components/mobile-viewport";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", interactiveWidget: "resizes-content" };
 
 export const metadata: Metadata = {
   title: "SOLIS Cotizador PWA",
@@ -21,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased"><MobileViewport />{children}</body>
     </html>
   );
 }

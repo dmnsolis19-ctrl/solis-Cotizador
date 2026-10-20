@@ -32,6 +32,8 @@ const quoteSchema = z.object({
   scopeExclusions: z.string().trim().max(4000).default(""),
   materialGroups: materialGroupsSchema.default([]),
   items: z.array(z.object({
+    sourceBundleId: z.string().uuid().optional(),
+    sourceCatalogItemPublicId: z.string().uuid().optional(),
     name: z.string().trim().min(2).max(240),
     detail: z.string().trim().max(2000).default(""),
     quantity: z.coerce.number().positive().max(1_000_000_000),
