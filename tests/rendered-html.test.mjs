@@ -18,7 +18,9 @@ test("declares SOLIS metadata and a valid installable manifest", async () => {
     readFile(new URL("../app/login/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
   ]);
-  assert.match(app, /src="\/solis-logo\.png"/);
+  assert.match(app, /data\.company\.logo_jpeg/);
+  assert.match(app, /"\/solis-logo\.png"/);
+  assert.match(app, /priority unoptimized/);
   assert.match(login, /src="\/solis-logo\.png"/);
   assert.match(worker, /solis-logo\.png/);
 });

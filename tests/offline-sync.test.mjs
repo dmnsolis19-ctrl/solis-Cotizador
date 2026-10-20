@@ -38,5 +38,6 @@ test("uses IndexedDB, isolates each user's queue and keeps APIs network-only", a
   const apiBranch = worker.slice(worker.indexOf('url.pathname.startsWith("/api/")'), worker.indexOf('if (event.request.mode === "navigate")'));
   assert.doesNotMatch(apiBranch, /cache\.put/);
   assert.match(worker, /SOLIS_CLEAR_PRIVATE_CACHE/);
-  assert.doesNotMatch(worker, /STATIC_ASSETS[^;]*"\/"/);
+  const staticAssets = JSON.parse(worker.match(/const STATIC_ASSETS = (\[[^\]]*\]);/)[1]);
+  assert.equal(staticAssets.includes("/"), false, "The authenticated shell must not enter the public install cache.");
 });

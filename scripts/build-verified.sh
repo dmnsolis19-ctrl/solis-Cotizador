@@ -25,5 +25,7 @@ timeout \
   "${SITES_BUILD_TIMEOUT:-3m}" \
   "${vinext}" build
 
+node "${SITES_PROJECT_ROOT}/scripts/prepare-offline-assets.mjs"
+
 echo "Preparing generated Cloudflare configuration..."
 node "${SITES_PROJECT_ROOT}/scripts/prepare-cloudflare-deploy.mjs"
