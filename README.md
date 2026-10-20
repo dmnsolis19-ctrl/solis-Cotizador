@@ -124,4 +124,4 @@ La v3.4 agrega listas internas de materiales enlazadas a partidas globales comer
 - Estructuras iniciales para fotovoltaica, automatización, climatización y electricidad domiciliaria, que deben completarse con materiales y cantidades reales.
 - Compartir PDF comercial mediante el dispositivo; abrir WhatsApp y preparar correo; envío directo opcional mediante Cloudflare Email Service.
 - El envío directo solo acepta PDFs de perfil comercial y revisión congelada, conserva un comprobante idempotente y registra la aceptación por el servicio. No afirma entrega final ni lectura.
-- No requiere nuevas migraciones sobre una instalación v3.3 con sus migraciones existentes aplicadas.
+- No requiere nuevas migraciones sobre una instalación v3.3 con sus migraciones existentes aplicadas s.
