@@ -478,6 +478,7 @@ export const purchaseRequests = sqliteTable("purchase_requests", {
   supplierPublicId: text("supplier_public_id"),
   supplier: text("supplier").notNull().default(""),
   currency: text("currency").notNull().default("CLP"),
+  dispatchNet: text("dispatch_net").notNull().default("0"),
   discountPercent: text("discount_percent").notNull().default("0"),
   taxPercent: text("tax_percent").notNull().default("19"),
   subtotal: text("subtotal").notNull().default("0"),
@@ -553,3 +554,21 @@ export const importHistory = sqliteTable("import_history", {
   importedAt: text("imported_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   summaryJson: text("summary_json").notNull().default("{}"),
 });
+
+export const catalogBundles = sqliteTable("catalog_bundles", {
+  publicId: text("public_id").primaryKey(),
+  ownerEmail: text("owner_email").notNull(),
+  name: text("name").notNull(),
+  specialty: text("specialty").notNull(),
+  currency: text("currency").notNull().default("CLP"),
+  payloadJson: text("payload_json").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [index("catalog_bundles_owner_idx").on(table.ownerEmail)]);
+
+export const supplierComparisons = sqliteTable("supplier_comparisons", {
+  publicId: text("public_id").primaryKey(),
+  ownerEmail: text("owner_email").notNull(),
+  purchaseRequestPublicId: text("purchase_request_public_id").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [uniqueIndex("supplier_comparisons_owner_purchase_uidx").on(table.ownerEmail, table.purchaseRequestPublicId)]);
