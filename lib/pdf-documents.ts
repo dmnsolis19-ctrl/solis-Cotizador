@@ -1,3 +1,5 @@
+import type { SupplierMaterial } from "./material-groups";
+
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
 const MARGIN = 42;
@@ -8,6 +10,42 @@ const LIGHT = [0.95, 0.96, 0.97] as const;
 
 type PdfPage = { commands: string[] };
 type Color = readonly [number, number, number];
+
+export function buildSupplierInquiryPdf(input: { company: CompanyData; number: string; project: string; issueDate: string; rows: SupplierMaterial[] }) {
+  const pdf = new PdfDocument();
+  let page: PdfPage;
+  let y = 0;
+  const newPage = () => {
+    page = pdf.addPage();
+    drawHeader(pdf, page, input.company, "SOLICITUD DE PRECIOS", input.number, input.issueDate);
+    y = PAGE_HEIGHT - 116;
+  };
+  const line = (text: string, bold = false) => {
+    if (y < 65) newPage();
+    pdf.text(page, text, MARGIN + 6, y, 8.5, bold);
+    y -= 12;
+  };
+  const paragraph = (text: string, bold = false) => { for (const textLine of wrapText(text, PAGE_WIDTH - MARGIN * 2 - 12, 8.5)) line(textLine, bold); };
+  newPage();
+  paragraph(`Proyecto: ${input.project}`, true);
+  paragraph("Solicitamos precio unitario neto, moneda, impuestos, disponibilidad, plazo de entrega, despacho, garantía y vigencia de su oferta.");
+  paragraph("Documento para solicitar una oferta. No constituye una orden de compra.");
+  y -= 12;
+  input.rows.forEach((item, index) => {
+    if (y < 140) newPage();
+    paragraph(`${index + 1}. ${item.code ? item.code + " - " : ""}${item.description}`, true);
+    paragraph(`Cantidad: ${item.quantity} ${item.unit}`);
+    if (item.brand) paragraph(`Marca / modelo: ${item.brand}`);
+    if (item.specification) paragraph(`Especificación: ${item.specification}`);
+    paragraph(`Lista(s): ${item.lists.join(" / ")}`);
+    paragraph("Precio unitario: __________________  Plazo: __________________");
+    y -= 6;
+    pdf.line(page, MARGIN, y, PAGE_WIDTH - MARGIN, y);
+    y -= 18;
+  });
+  pdf.pages.forEach((currentPage, index) => drawFooter(pdf, currentPage, input.company, index + 1, pdf.pages.length));
+  return pdf.toBytes();
+}
 
 export type CompanyData = Record<string, unknown>;
 export type ClientPdfData = { name: string; taxId?: string; contactName?: string; email?: string; phone?: string; address?: string };

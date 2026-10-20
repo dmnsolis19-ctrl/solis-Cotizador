@@ -6,6 +6,7 @@ import { quoteItems, quotes } from "@/db/schema";
 import { writeAuditEvent } from "@/lib/audit";
 import { authorizationResponse, requirePermission } from "@/lib/auth";
 import { calculateQuote } from "@/lib/pricing";
+import { composeQuoteLines, materialGroupsSchema, readMaterialGroups } from "@/lib/material-groups";
 import { documentScope, reserveDocumentSequence } from "@/lib/sequences";
 import { businessYear } from "@/lib/dates";
 
@@ -27,6 +28,7 @@ const quoteSchema = z.object({
   paymentTerms: z.string().trim().max(1000).default(""),
   deliveryTerms: z.string().trim().max(1000).default(""),
   notes: z.string().trim().max(4000).default(""),
+  materialGroups: materialGroupsSchema.default([]),
   items: z.array(z.object({
     name: z.string().trim().min(2).max(240),
     detail: z.string().trim().max(2000).default(""),
@@ -34,7 +36,7 @@ const quoteSchema = z.object({
     unit: z.string().trim().min(1).max(40),
     unitCost: z.coerce.number().min(0).max(1_000_000_000_000),
     unitPrice: z.coerce.number().min(0).max(1_000_000_000_000),
-  })).min(1).max(500),
+  })).max(500),
 });
 
 const updateQuoteSchema = quoteSchema.extend({
@@ -49,6 +51,8 @@ function quotePayload(
 ) {
   return {
     ...input,
+    manualItems: input.items,
+    items: composeQuoteLines(input.items, input.materialGroups, input),
     public_id: identity.publicId,
     number: identity.number,
     status: "Borrador",
@@ -86,6 +90,8 @@ export async function GET(request: Request) {
         unitCost: Number(item.unitCost),
         unitPrice: Number(item.unitPrice),
       })),
+      materialGroups: readMaterialGroups(quote.payloadJson),
+      manualItems: Array.isArray(payload.manualItems) ? payload.manualItems : items.map((item) => ({ name: item.name, detail: item.detail, quantity: Number(item.quantity), unit: item.unit, unitCost: Number(item.unitCost), unitPrice: Number(item.unitPrice) })),
       commercial: {
         taxPercent: Number(payload.taxPercent ?? payload.tax_percent ?? 19),
         overheadPercent: Number(payload.overheadPercent ?? payload.overhead_percent ?? 10),
@@ -110,6 +116,7 @@ export async function POST(request: Request) {
     const session = await requirePermission("quotes.write");
     const ownerEmail = session.ownerEmail;
     const input = quoteSchema.parse(await request.json());
+    const normalizedItems = composeQuoteLines(input.items, input.materialGroups, input);
     const db = getDb();
     const publicId = input.publicId ?? crypto.randomUUID();
     const [existing] = await db.select().from(quotes).where(eq(quotes.publicId, publicId)).limit(1);
@@ -120,7 +127,7 @@ export async function POST(request: Request) {
     const [{ value }] = await db.select({ value: count() }).from(quotes).where(eq(quotes.ownerEmail, ownerEmail));
     const sequence = await reserveDocumentSequence(ownerEmail, documentScope("quote"), Number(value));
     const number = input.number || `SIS-COT-${businessYear()}-${String(sequence).padStart(3, "0")}`;
-    const calculated = calculateQuote(input.items, input);
+    const calculated = calculateQuote(normalizedItems, input);
     const payload = quotePayload(input, { publicId, number, rootPublicId: publicId, parentPublicId: "", revision: 0 }, calculated);
 
     await db.batch([
@@ -133,7 +140,7 @@ export async function POST(request: Request) {
         internalCost: String(calculated.internalCost), estimatedProfit: String(calculated.estimatedProfit),
         marginPercent: String(calculated.marginPercent), payloadJson: JSON.stringify(payload), updatedAt: new Date().toISOString(),
       }),
-      db.insert(quoteItems).values(input.items.map((item, position) => ({
+      db.insert(quoteItems).values(normalizedItems.map((item, position) => ({
         publicId: `${publicId}:item:${position}`, ownerEmail, quotePublicId: publicId, position,
         name: item.name, detail: item.detail, quantity: String(item.quantity), unit: item.unit,
         unitCost: String(item.unitCost), unitPrice: String(item.unitPrice),
@@ -169,7 +176,8 @@ export async function PATCH(request: Request) {
 
     const { expectedUpdatedAt: _expectedUpdatedAt, ...editable } = input;
     void _expectedUpdatedAt;
-    const calculated = calculateQuote(editable.items, editable);
+    const normalizedItems = composeQuoteLines(editable.items, editable.materialGroups, editable);
+    const calculated = calculateQuote(normalizedItems, editable);
     const updatedAt = new Date(Math.max(Date.now(), Date.parse(existing.updatedAt) + 1)).toISOString();
     const payload = quotePayload(editable, {
       publicId: existing.publicId,
@@ -201,7 +209,7 @@ export async function PATCH(request: Request) {
             WHERE owner_email = ? AND public_id = ? AND updated_at = ?
           )
       `).bind(ownerEmail, existing.publicId, ownerEmail, existing.publicId, updatedAt),
-      ...editable.items.map((item, position) => env.DB.prepare(`
+      ...normalizedItems.map((item, position) => env.DB.prepare(`
         INSERT INTO quote_items (
           public_id, owner_email, quote_public_id, position, name, detail,
           quantity, unit, unit_cost, unit_price

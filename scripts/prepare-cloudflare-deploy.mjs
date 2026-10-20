@@ -15,6 +15,8 @@ generated.compatibility_date = production.compatibility_date;
 generated.compatibility_flags = production.compatibility_flags;
 generated.d1_databases = production.d1_databases;
 generated.r2_buckets = production.r2_buckets;
+if (production.send_email) generated.send_email = production.send_email;
+if (production.vars) generated.vars = { ...generated.vars, ...production.vars };
 
 fs.writeFileSync(generatedPath, JSON.stringify(generated, null, 2) + "\n", "utf8");
 

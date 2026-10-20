@@ -5,6 +5,7 @@ import { quoteEvents, quoteItems, quotes, workOrders } from "@/db/schema";
 import { writeAuditEvent } from "@/lib/audit";
 import { authorizationResponse, requirePermission } from "@/lib/auth";
 import { documentScope, reserveDocumentSequence } from "@/lib/sequences";
+import { pendingMaterialPrices, readMaterialGroups } from "@/lib/material-groups";
 import { businessDate, businessYear } from "@/lib/dates";
 import { canApprove, canCreateRevision, canCreateWorkOrder, canFreeze, revisionNumber } from "@/lib/workflow";
 
@@ -41,11 +42,13 @@ export async function POST(request: Request) {
 
     if (input.action === "lock") {
       if (!canFreeze(quote)) return Response.json({ error: "La versión ya está congelada." }, { status: 409 });
+      if (pendingMaterialPrices(readMaterialGroups(quote.payloadJson))) return Response.json({ error: "Confirme los precios de todos los materiales antes de congelar la oferta." }, { status: 409 });
       const now = new Date().toISOString();
-      await db.update(quotes).set({
+      const frozen = await db.update(quotes).set({
         locked: true, lockedAt: now, status: "Enviada", updatedAt: now,
         payloadJson: updatePayload(quote.payloadJson, { locked: true, locked_at: now, status: "Enviada" }),
-      }).where(and(eq(quotes.ownerEmail, ownerEmail), eq(quotes.publicId, quote.publicId)));
+      }).where(and(eq(quotes.ownerEmail, ownerEmail), eq(quotes.publicId, quote.publicId), eq(quotes.updatedAt, quote.updatedAt), eq(quotes.locked, false))).returning({ publicId: quotes.publicId });
+      if (!frozen.length) return Response.json({ error: "La cotización cambió en otro dispositivo. Actualice antes de congelar." }, { status: 409 });
       await addEvent(ownerEmail, quote.publicId, "VERSION_CONGELADA", actor, input.detail || "Versión congelada para preservar el documento enviado.");
       await writeAuditEvent(session, { action: "QUOTE_LOCKED", entityType: "quote", entityPublicId: quote.publicId, detail: { number: quote.number } });
       return Response.json({ ok: true, message: "Versión congelada." });
