@@ -110,3 +110,18 @@ Esta aplicación ejecuta la interfaz y sus rutas API en Cloudflare Workers, cons
 Agregar un usuario a D1 no amplía el acceso privado del Worker. El mismo correo también debe estar autorizado en la política de acceso del sitio. Si un rol se desactiva o una orden se reasigna mientras tiene operaciones offline, el servidor rechazará esas operaciones al sincronizar.
 
 Para trasladarla a una cuenta propia de Cloudflare, consulte [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md).
+
+
+## SOLIS Cotizador PWA v3.4
+
+La v3.4 agrega listas internas de materiales enlazadas a partidas globales comerciales, exportaciones para proveedores y opciones para compartir PDFs. Consulte [la guía de actualización y uso](docs/ACTUALIZACION_V3_4.md).
+
+- Cada lista conserva sus materiales, títulos interno/comercial, especificaciones, marca/modelo, proveedor de referencia y estado del precio dentro de la revisión.
+- El servidor deriva una partida global por lista; no confía en totales calculados por el navegador.
+- Precio de venta por costo, recargo, margen objetivo o valor manual. El margen considera gastos generales, contingencia y descuento global.
+- Se pueden guardar listas con precios pendientes para consultar proveedores. Antes de congelar la oferta deben confirmarse todos los precios.
+- PDF y CSV de solicitud de precios con selección de listas y consolidación técnica; no incluyen costos internos ni precios de venta.
+- Estructuras iniciales para fotovoltaica, automatización, climatización y electricidad domiciliaria, que deben completarse con materiales y cantidades reales.
+- Compartir PDF comercial mediante el dispositivo; abrir WhatsApp y preparar correo; envío directo opcional mediante Cloudflare Email Service.
+- El envío directo solo acepta PDFs de perfil comercial y revisión congelada, conserva un comprobante idempotente y registra la aceptación por el servicio. No afirma entrega final ni lectura.
+- No requiere nuevas migraciones sobre una instalación v3.3 con sus migraciones existentes aplicadas.
