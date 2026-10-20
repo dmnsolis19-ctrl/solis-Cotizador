@@ -2,6 +2,10 @@
 
 Aplicación empresarial para cotizaciones, órdenes de trabajo, ejecución en terreno, inventario, compras, cobros y rentabilidad. Se ejecuta sobre Cloudflare Workers, usa D1 para datos estructurados y R2 para documentos y evidencias.
 
+La entrega actual es **v3.5.0**. Consulte [la guía de actualización y uso](docs/ACTUALIZACION_V3_5.md) y [la validación de esta entrega](docs/VALIDACION_V3_5.md).
+
+Incluye PDF comercial con formato blanco y azul, logo configurable, 196 referencias eléctricas de Chile con fuente y fecha, edición de precios propios, materiales de órdenes en PDF/CSV, expediente de facturación para el contador y copias de lectura/cola offline por usuario. Las listas internas siguen generando una partida global por título comercial. No requiere migraciones adicionales sobre v3.4.
+
 ## Prerequisites
 
 - Node.js `>=22.13.0`
@@ -124,4 +128,4 @@ La v3.4 agrega listas internas de materiales enlazadas a partidas globales comer
 - Estructuras iniciales para fotovoltaica, automatización, climatización y electricidad domiciliaria, que deben completarse con materiales y cantidades reales.
 - Compartir PDF comercial mediante el dispositivo; abrir WhatsApp y preparar correo; envío directo opcional mediante Cloudflare Email Service.
 - El envío directo solo acepta PDFs de perfil comercial y revisión congelada, conserva un comprobante idempotente y registra la aceptación por el servicio. No afirma entrega final ni lectura.
-- No requiere nuevas migraciones sobre una instalación v3.3 con sus migraciones existentes aplicadas s.
+- No requiere nuevas migraciones sobre una instalación v3.3 con sus migraciones existentes aplicadas.
