@@ -2,7 +2,7 @@ export const ROLES = ["administrator", "estimator", "supervisor", "technician"] 
 export type AppRole = (typeof ROLES)[number];
 
 export const PERMISSIONS = [
-  "dashboard.view",
+  "dashboard.view", "settings.manage",
   "clients.read", "clients.write",
   "catalog.read", "catalog.write",
   "quotes.read", "quotes.write", "quotes.flow", "quotes.approve",
