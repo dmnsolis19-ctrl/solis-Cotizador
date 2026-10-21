@@ -2,7 +2,7 @@
 
 Aplicación empresarial para cotizaciones, órdenes de trabajo, ejecución en terreno, inventario, compras, cobros y rentabilidad. Se ejecuta sobre Cloudflare Workers, usa D1 para datos estructurados y R2 para documentos y evidencias.
 
-La entrega actual es **v3.6.0**. Consulte [la guía de actualización y uso](docs/ACTUALIZACION_V3_6.md) y [la validación de esta entrega](docs/VALIDACION_V3_6.md). La validación visual en navegadores de teléfono, tablet y escritorio sigue pendiente; el detalle de las versiones usadas para probar está en ese informe.
+La entrega actual es **v3.6.2**. Corrige el borrado del formulario de cotización durante actualizaciones de fondo, los recortes de texto en los PDF y la edición de campos numéricos con cero inicial. Consulte [la guía de actualización](docs/ACTUALIZACION_V3_6_2.md). Las funciones de v3.6 y sus límites de validación se describen en [la guía anterior](docs/ACTUALIZACION_V3_6.md).
 
 Incluye PDF comercial con formato blanco y azul, logo configurable, 196 referencias eléctricas de Chile con fuente y fecha, edición de precios propios, materiales de órdenes en PDF/CSV, expediente de facturación para el contador y copias de lectura/cola offline por usuario. Las listas internas siguen generando una partida global por título comercial. v3.6 agrega importación Excel/CSV con vista previa, conjuntos, nueve referencias públicas de servicios/mano de obra, cálculo propio por cuadrilla y comparador de proveedores con preparación de compra. Requiere la migración aditiva `0015_little_war_machine.sql` sobre una instalación v3.5 completa. No se publica ni despliega al descomprimir este proyecto.
 

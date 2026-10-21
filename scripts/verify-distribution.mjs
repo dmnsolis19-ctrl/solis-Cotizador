@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const manifest = JSON.parse(await readFile(path.join(root, "docs/ARCHIVOS_V3_6.json"), "utf8"));
+const manifest = JSON.parse(await readFile(path.join(root, "docs/ARCHIVOS_V3_6_2.json"), "utf8"));
 let failures = 0;
 for (const file of manifest.files) {
   if (path.isAbsolute(file.path) || file.path.split(/[\\/]/).includes("..")) throw new Error("Ruta inválida en manifiesto.");

@@ -1,5 +1,5 @@
-const STATIC_CACHE = "solis-cotizador-static-v36";
-const PRIVATE_SHELL_CACHE = "solis-cotizador-shell-v36";
+const STATIC_CACHE = "solis-cotizador-static-v362";
+const PRIVATE_SHELL_CACHE = "solis-cotizador-shell-v362";
 const STATIC_ASSETS = ["/manifest.webmanifest", "/solis-logo.png"];
 const isStaticAsset = (path) => STATIC_ASSETS.includes(path) ||
   (path.startsWith("/") && !path.startsWith("//") && !path.startsWith("/api/") && path !== "/sw.js" && /\.(?:js|css|woff2?)$/.test(path));
