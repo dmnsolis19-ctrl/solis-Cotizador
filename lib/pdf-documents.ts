@@ -19,39 +19,21 @@ type PdfPage = { commands: string[] };
 type Color = readonly [number, number, number];
 
 export function buildSupplierInquiryPdf(input: { company: CompanyData; number: string; project: string; issueDate: string; rows: SupplierMaterial[] }) {
-  const pdf = new PdfDocument();
-  let page: PdfPage;
-  let y = 0;
-  const newPage = () => {
-    page = pdf.addPage();
-    drawHeader(pdf, page, input.company, "SOLICITUD DE PRECIOS", input.number, input.issueDate);
-    y = PAGE_HEIGHT - 150;
-  };
-  const line = (text: string, bold = false) => {
-    if (y < 65) newPage();
-    pdf.text(page, text, MARGIN + 6, y, 8.5, bold);
-    y -= 12;
-  };
-  const paragraph = (text: string, bold = false) => { for (const textLine of wrapText(text, PAGE_WIDTH - MARGIN * 2 - 12, 8.5)) line(textLine, bold); };
-  newPage();
-  paragraph(`Proyecto: ${input.project}`, true);
-  paragraph("Solicitamos precio unitario neto, moneda, impuestos, disponibilidad, plazo de entrega, despacho, garantía y vigencia de su oferta.");
-  paragraph("Documento para solicitar una oferta. No constituye una orden de compra.");
-  y -= 12;
+  const l = new PdfLayout(input.company, "SOLICITUD DE PRECIOS", input.number, input.issueDate);
+  l.paragraph(`Proyecto: ${input.project}`, 9, true);
+  l.paragraph("Solicitamos precio unitario neto, moneda, impuestos, disponibilidad, plazo de entrega, despacho, garantía y vigencia de su oferta.");
+  l.paragraph("Documento para solicitar una oferta. No constituye una orden de compra."); l.gap();
   input.rows.forEach((item, index) => {
-    if (y < 140) newPage();
-    paragraph(`${index + 1}. ${item.code ? item.code + " - " : ""}${item.description}`, true);
-    paragraph(`Cantidad: ${item.quantity} ${item.unit}`);
-    if (item.brand) paragraph(`Marca / modelo: ${item.brand}`);
-    if (item.specification) paragraph(`Especificación: ${item.specification}`);
-    paragraph(`Lista(s): ${item.lists.join(" / ")}`);
-    paragraph("Precio unitario: __________________  Plazo: __________________");
-    y -= 6;
-    pdf.line(page, MARGIN, y, PAGE_WIDTH - MARGIN, y);
-    y -= 18;
+    l.ensure(95);
+    l.paragraph(`${index + 1}. ${item.code ? item.code + " - " : ""}${item.description}`, 8.5, true);
+    l.paragraph(`Cantidad: ${item.quantity} ${item.unit}`);
+    if (item.brand) l.paragraph(`Marca / modelo: ${item.brand}`);
+    if (item.specification) l.paragraph(`Especificación: ${item.specification}`);
+    l.paragraph(`Lista(s): ${item.lists.join(" / ")}`);
+    l.paragraph("Precio unitario: __________________  Plazo: __________________");
+    l.gap();
   });
-  pdf.pages.forEach((currentPage, index) => drawFooter(pdf, currentPage, input.company, index + 1, pdf.pages.length));
-  return pdf.toBytes();
+  return l.bytes();
 }
 
 export type CompanyData = Record<string, unknown>;
@@ -132,7 +114,9 @@ function approximateWidth(value: string, size: number, bold = false) {
   return units / 1000 * size;
 }
 
-function wrapText(value: unknown, maxWidth: number, size: number, bold = false) {
+function wrapText(value: unknown, maxWidth: number, size: number, bold = false): string[] {
+  const paragraphs = String(value ?? "").split(/\r?\n/);
+  if (paragraphs.length > 1) return paragraphs.flatMap(paragraph => wrapText(paragraph, maxWidth, size, bold));
   const words = cleanText(value).split(" ").filter(Boolean);
   const lines: string[] = [];
   let current = "";
@@ -264,475 +248,324 @@ function parsePayload(payloadJson: string) {
 function drawHeader(pdf: PdfDocument, page: PdfPage, company: CompanyData, title: string, number: string, subtitle: string) {
   pdf.logo(page, companyValue(company, "logo_jpeg") || DEFAULT_PDF_LOGO, MARGIN, PAGE_HEIGHT - 82, 64, 64);
   const name = companyValue(company, "commercial_name", "name", "company_name") || "SOLIS INGENIERÍA Y SERVICIOS SpA";
-  wrapText(name, 415, 11.5, true).slice(0, 2).forEach((text, i) => pdf.text(page, text, MARGIN + 78, PAGE_HEIGHT - 32 - i * 13, 11.5, true));
-  pdf.text(page, companyValue(company, "tagline", "business_activity", "giro") || "Automatización · Control · Integración Industrial", MARGIN + 78, PAGE_HEIGHT - 60, 8, false, SLATE);
-  pdf.text(page, companyValue(company, "address", "company_address") || "San Pedro de Atacama, Región de Antofagasta", MARGIN + 78, PAGE_HEIGHT - 73, 8, false, SLATE);
-  pdf.line(page, MARGIN, PAGE_HEIGHT - 94, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 94, BLUE, 1.2);
-  if (title !== "COTIZACIÓN") {
-    pdf.text(page, title, MARGIN, PAGE_HEIGHT - 117, 15, true);
-    pdf.text(page, number, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 113, 8.5, true, BLUE, "right");
-    pdf.text(page, subtitle, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 127, 7, false, SLATE, "right");
+  let y = PAGE_HEIGHT - 32;
+  const companyLine = (value: string, size: number, bold = false) => {
+    for (const line of wrapText(value, PAGE_WIDTH - MARGIN * 2 - 78, size, bold)) {
+      pdf.text(page, line, MARGIN + 78, y, size, bold, bold ? NAVY : SLATE);
+      y -= size + 3;
+    }
+  };
+  companyLine(name, 11.5, true);
+  companyLine(companyValue(company, "tagline", "business_activity", "giro") || "Automatización · Control · Integración Industrial", 8);
+  companyLine(companyValue(company, "address", "company_address") || "San Pedro de Atacama, Región de Antofagasta", 8);
+  y = Math.min(y - 8, PAGE_HEIGHT - 94);
+  pdf.line(page, MARGIN, y, PAGE_WIDTH - MARGIN, y, BLUE, 1.2);
+  y -= 23;
+  {
+    const titleSize = title === "COTIZACIÓN" ? 23 : 15;
+    for (const line of wrapText(title, PAGE_WIDTH - MARGIN * 2, titleSize, true)) { pdf.text(page, line, MARGIN, y, titleSize, true); y -= titleSize + 4; }
+    for (const line of wrapText([number, subtitle].filter(Boolean).join(" · "), PAGE_WIDTH - MARGIN * 2, 8, true)) { pdf.text(page, line, MARGIN, y, 8, true, BLUE); y -= 11; }
   }
+  return y - 12;
+}
+
+function footerTop(company: CompanyData) {
+  return Math.max(34, 22 + footerLines(company).length * 8);
+}
+
+function footerLines(company: CompanyData) {
+  const taxId = companyValue(company, "tax_id", "rut");
+  const contact = [taxId ? `RUT ${taxId}` : "", companyValue(company, "email", "company_email"), companyValue(company, "phone", "company_phone")].filter(Boolean).join(" · ");
+  return wrapText(contact || "SOLIS Ingeniería y Servicios SpA", 410, 6.8);
 }
 
 function drawFooter(pdf: PdfDocument, page: PdfPage, company: CompanyData, pageNumber: number, pageCount: number) {
-  pdf.line(page, MARGIN, 34, PAGE_WIDTH - MARGIN, 34);
-  const taxId = companyValue(company, "tax_id", "rut");
-  const contact = [taxId ? `RUT ${taxId}` : "", companyValue(company, "email", "company_email"), companyValue(company, "phone", "company_phone")].filter(Boolean).join(" · ");
-  wrapText(contact || "SOLIS Ingeniería y Servicios SpA", 410, 6.8).slice(0, 2).forEach((line, index) => pdf.text(page, line, MARGIN, 22 - index * 8, 6.8, false, SLATE));
+  const top = footerTop(company);
+  pdf.line(page, MARGIN, top, PAGE_WIDTH - MARGIN, top);
+  footerLines(company).forEach((line, index) => pdf.text(page, line, MARGIN, top - 12 - index * 8, 6.8, false, SLATE));
   pdf.text(page, `Página ${pageNumber} de ${pageCount}`, PAGE_WIDTH - MARGIN, 20, 7.5, false, SLATE, "right");
 }
 
-function labelValue(pdf: PdfDocument, page: PdfPage, label: string, value: unknown, x: number, y: number, width: number) {
-  pdf.text(page, label.toUpperCase(), x, y, 7, true, SLATE);
-  const lines = wrapText(value || "-", width, 10).slice(0, 2);
-  lines.forEach((line, index) => pdf.text(page, line, x, y - 15 - index * 12, 10, index === 0, NAVY));
-}
+type PdfCell = { value: unknown; width: number; bold?: boolean; fill?: Color; align?: "left" | "right"; size?: number; color?: Color };
 
-function addQuoteTableHeader(pdf: PdfDocument, page: PdfPage, y: number) {
-  const xs = [MARGIN, 68, 303, 342, 383, 466, PAGE_WIDTH - MARGIN];
-  const labels = ["Ítem", "Descripción", "Cant.", "Unidad", "P. unitario", "Total neto"];
-  pdf.rect(page, MARGIN, y - 22, PAGE_WIDTH - MARGIN * 2, 22, BLUE);
-  labels.forEach((label, i) => pdf.text(page, label, xs[i] + 5, y - 14, 7.5, true, WHITE));
-  xs.slice(1, -1).forEach((x) => pdf.line(page, x, y, x, y - 22, WHITE, 0.4));
-  return y - 22;
+// All blocks measure their actual wrapped text and split at page boundaries.
+// y is the top of the next block; no fixed-height box discards text.
+class PdfLayout {
+  pdf = new PdfDocument();
+  page!: PdfPage;
+  y = 0;
+  private pageTop = 0;
+  width = PAGE_WIDTH - MARGIN * 2;
+  bottom: number;
+  constructor(private company: CompanyData, private title: string, private number: string, private subtitle: string) {
+    this.bottom = Math.max(62, footerTop(company) + 18);
+    this.next();
+  }
+  next(title = this.title) {
+    this.title = title;
+    this.page = this.pdf.addPage();
+    this.y = drawHeader(this.pdf, this.page, this.company, title, this.number, this.subtitle);
+    this.pageTop = this.y;
+  }
+  ensure(height: number) { if (this.y - height < this.bottom) this.next(); }
+  gap(height = 12) { this.y -= height; }
+  section(title: string) {
+    this.ensure(42);
+    this.paragraph(title, 10, true, BLUE);
+    this.gap(5);
+  }
+  paragraph(value: unknown, size = 8.5, bold = false, color: Color = NAVY) {
+    const lines = wrapText(value, this.width, size, bold);
+    const height = lines.length * (size + 4);
+    if (height <= this.pageTop - this.bottom) this.ensure(height);
+    for (const line of lines) {
+      this.ensure(size + 5);
+      this.pdf.text(this.page, line, MARGIN, this.y - size, size, bold, color);
+      this.y -= size + 4;
+    }
+  }
+  row(cells: PdfCell[], boxed = true, size = 8, padding = 6, continuation?: () => void) {
+    const lineHeight = Math.max(size, ...cells.map(cell => cell.size || size)) + 3;
+    const lines = cells.map(cell => wrapText(cell.value, cell.width - padding * 2, cell.size || size, cell.bold));
+    const length = Math.max(...lines.map(cell => cell.length));
+    let offset = 0;
+    while (offset < length) {
+      if (this.y - lineHeight - padding * 2 < this.bottom) { this.next(); continuation?.(); }
+      const count = Math.min(length - offset, Math.max(1, Math.floor((this.y - this.bottom - padding * 2) / lineHeight)));
+      const height = count * lineHeight + padding * 2;
+      let x = MARGIN;
+      cells.forEach((cell, i) => {
+        if (boxed) this.pdf.rect(this.page, x, this.y - height, cell.width, height, cell.fill || WHITE, [0.78, 0.83, 0.89]);
+        lines[i].slice(offset, offset + count).forEach((line, index) => this.pdf.text(this.page, line, cell.align === "right" ? x + cell.width - padding : x + padding, this.y - padding - (cell.size || size) - index * lineHeight, cell.size || size, cell.bold, cell.color || NAVY, cell.align));
+        x += cell.width;
+      });
+      this.y -= height;
+      offset += count;
+      if (offset < length) { this.next(); continuation?.(); }
+    }
+  }
+  fields(fields: Array<{ label: string; value: unknown }>) {
+    this.ensure(50);
+    const width = this.width / fields.length;
+    this.row(fields.map(field => ({ value: field.label.toUpperCase(), width, bold: true, color: SLATE })), false, 7, 4);
+    this.row(fields.map(field => ({ value: field.value || "-", width, bold: true })), false, 9, 4);
+    this.gap(10);
+  }
+  box(title: string, value: unknown, fill: Color = LIGHT, trailingHeight = 0) {
+    const lines = wrapText(value, this.width - 24, 8.5);
+    let offset = 0;
+    while (offset < lines.length) {
+      this.ensure(54 + trailingHeight);
+      const count = Math.min(lines.length - offset, Math.max(1, Math.floor((this.y - this.bottom - 36 - trailingHeight) / 12)));
+      const height = 36 + count * 12;
+      this.pdf.rect(this.page, MARGIN, this.y - height, this.width, height, fill, [0.78, 0.83, 0.89]);
+      this.pdf.text(this.page, title + (offset ? " (CONTINUACIÓN)" : ""), MARGIN + 12, this.y - 16, 8, true, SLATE);
+      lines.slice(offset, offset + count).forEach((line, i) => this.pdf.text(this.page, line, MARGIN + 12, this.y - 33 - i * 12, 8.5));
+      this.y -= height;
+      offset += count;
+      if (offset < lines.length) this.next();
+    }
+    this.gap();
+  }
+  bytes() {
+    this.pdf.pages.forEach((page, index) => drawFooter(this.pdf, page, this.company, index + 1, this.pdf.pages.length));
+    return this.pdf.toBytes();
+  }
 }
 
 export function buildQuotePdf(input: { company: CompanyData; client?: ClientPdfData; quote: QuotePdfData; items: QuotePdfItem[] }) {
   const { company, quote, items } = input;
   const client = input.client || { name: quote.clientName };
   const payload = parsePayload(quote.payloadJson);
+  const l = new PdfLayout(company, "COTIZACIÓN", quote.number, quote.status);
   const quoteMoney = (value: unknown) => money(value, quote.currency) + (quote.currency === "CLP" ? " CLP" : "");
-  const pdf = new PdfDocument();
-  let page = pdf.addPage();
-  let y = 0;
-  const width = PAGE_WIDTH - MARGIN * 2;
-  const newPage = (continuation = false) => {
-    if (continuation) page = pdf.addPage();
-    drawHeader(pdf, page, company, "COTIZACIÓN", quote.number, quote.status);
-    pdf.text(page, "COTIZACIÓN", MARGIN, PAGE_HEIGHT - 125, 23, true);
-    y = PAGE_HEIGHT - 144;
-    for (const line of wrapText(quote.project, width, 11)) { pdf.text(page, line, MARGIN, y, 11, true, BLUE); y -= 14; }
-    if (continuation) { pdf.text(page, `${quote.number} · ${quote.status} · Continuación`, MARGIN, y, 8, false, SLATE); y -= 22; }
-    else y -= 8;
-  };
-  const ensure = (height: number) => { if (y - height < 62) newPage(true); };
-  const section = (title: string) => { ensure(35); pdf.text(page, title, MARGIN, y, 11.5, true, BLUE); y -= 14; };
-  const paragraph = (value: unknown, bold = false, inset = 0, size = 8) => {
-    for (const line of wrapText(value, width - inset * 2, size)) { ensure(13); pdf.text(page, line, MARGIN + inset, y, size, bold); y -= 11.5; }
-  };
-  const cell = (value: unknown, x: number, top: number, w: number, h: number, label = false) => {
-    pdf.rect(page, x, top - h, w, h, label ? PALE_BLUE : WHITE, [0.78, 0.83, 0.89]);
-    wrapText(value, w - 10, 7.6, true).forEach((line, i) => pdf.text(page, line, x + 5, top - 13 - i * 10, 7.6, true));
-  };
-  newPage();
+  l.paragraph(quote.project, 11, true, BLUE); l.gap();
   const metadata = [["Cliente", client.name || quote.clientName, "Fecha", quote.issueDate.split("-").reverse().join("/")], ["RUT", client.taxId || "-", "Cotización", quote.number], ["Contacto", client.contactName || client.email || "-", "Validez", `${payload.validityDays ?? payload.validity_days ?? 20} días corridos`]];
-  metadata.forEach(([a, b, c, d]) => {
-    const h = Math.max(19, Math.max(wrapText(b, 231, 7.6, true).length, wrapText(d, 141, 7.6, true).length) * 10 + 9);
-    cell(a, MARGIN, y, 56, h, true); cell(b, MARGIN + 56, y, 241, h); cell(c, MARGIN + 297, y, 63, h, true); cell(d, MARGIN + 360, y, width - 360, h); y -= h;
+  for (const [a, b, c, d] of metadata) l.row([
+    { value: a, width: 56, bold: true, fill: PALE_BLUE }, { value: b, width: 241, bold: true },
+    { value: c, width: 63, bold: true, fill: PALE_BLUE }, { value: d, width: l.width - 360, bold: true },
+  ]);
+  l.gap(20);
+  const widths = [26, 210, 40, 40, 95, l.width - 411];
+  const tableHeader = () => {
+    l.section("OFERTA ECONÓMICA");
+    l.row(["Ítem", "Descripción", "Cant.", "Unidad", "P. unitario", "Total neto"].map((value, i) => ({ value, width: widths[i], bold: true, fill: BLUE, color: WHITE })), true, 7, 4);
+  };
+  tableHeader();
+  items.forEach((item, index) => {
+    const values = [index + 1, `${item.name}${item.detail ? `\n${item.detail}` : ""}`, Number(item.quantity).toLocaleString("es-CL", { maximumFractionDigits: 4 }), item.unit, quoteMoney(item.unitPrice), quoteMoney(Number(item.unitPrice) * Number(item.quantity))];
+    l.row(values.map((value, i) => ({ value, width: widths[i], bold: i !== 1, fill: index % 2 ? LIGHT : WHITE, align: i >= 4 ? "right" : "left" })), true, 8, 5, tableHeader);
   });
-  y -= 25;
-  section("OFERTA ECONÓMICA"); y = addQuoteTableHeader(pdf, page, y);
-  const xs = [MARGIN, 68, 303, 342, 383, 466, PAGE_WIDTH - MARGIN];
-  for (let index = 0; index < items.length; index++) {
-    const item = items[index];
-    const lines = [...wrapText(item.name, 225, 8, true).map((text) => ({ text, bold: true })), ...wrapText(item.detail, 225, 8).filter(Boolean).map((text) => ({ text, bold: false }))];
-    // Split long descriptions across pages without losing scope text.
-    let offset = 0;
-    while (offset < lines.length) {
-      if (y < 96) { newPage(true); section("OFERTA ECONÓMICA (CONTINUACIÓN)"); y = addQuoteTableHeader(pdf, page, y); }
-      const count = Math.min(lines.length - offset, Math.max(1, Math.floor((y - 72) / 10) - 1));
-      const chunk = lines.slice(offset, offset + count);
-      const h = Math.max(25, chunk.length * 10 + 10);
-      pdf.rect(page, MARGIN, y - h, width, h, index % 2 ? LIGHT : WHITE);
-      for (const x of xs) pdf.line(page, x, y, x, y - h, [0.78, 0.83, 0.89]);
-      pdf.line(page, MARGIN, y - h, PAGE_WIDTH - MARGIN, y - h, [0.78, 0.83, 0.89]);
-      pdf.text(page, offset ? "..." : index + 1, MARGIN + 8, y - 15, 8, true);
-      chunk.forEach((line, i) => pdf.text(page, line.text, 73, y - 14 - i * 10, 8, line.bold, line.bold ? NAVY : SLATE));
-      if (!offset) {
-        pdf.text(page, Number(item.quantity).toLocaleString("es-CL", { maximumFractionDigits: 4 }), 335, y - 15, 7.5, true, NAVY, "right");
-        pdf.text(page, item.unit, 348, y - 15, 7.5, true);
-        pdf.text(page, quoteMoney(item.unitPrice), 460, y - 15, 7.6, true, NAVY, "right");
-        pdf.text(page, quoteMoney(Number(item.unitPrice) * Number(item.quantity)), PAGE_WIDTH - MARGIN - 5, y - 15, 7.6, true, NAVY, "right");
-      }
-      offset += count; y -= h;
-    }
-  }
-  y -= 6; ensure(113);
+  l.gap(12);
   const discountPercent = Number(payload.discountPercent ?? payload.discount_percent ?? 0);
   const taxPercent = Number(payload.taxPercent ?? payload.tax_percent ?? 19);
   const totals = [["Subtotal bruto", quote.grossSubtotal], [`Descuento${discountPercent ? ` ${discountPercent}%` : ""}`, Math.max(0, Number(quote.grossSubtotal) - Number(quote.netSubtotal))], ["Subtotal neto", quote.netSubtotal], [`IVA ${taxPercent}%`, quote.tax], ["TOTAL IVA INCLUIDO", quote.total]];
-  const totalX = 317;
-  totals.forEach(([label, value], index) => {
-    pdf.rect(page, totalX, y - 21, PAGE_WIDTH - MARGIN - totalX, 21, index === 4 ? [0.83, 0.90, 0.98] : PALE_BLUE, [0.78, 0.83, 0.89]);
-    pdf.text(page, label, totalX + 6, y - 14, 7.6, true);
-    const amount = Number(value); pdf.text(page, `${index === 1 && amount ? "- " : ""}${quoteMoney(amount)}`, PAGE_WIDTH - MARGIN - 6, y - 14, 8, true, NAVY, "right"); y -= 21;
-  });
-  y -= 23; ensure(76); section("CONDICIONES COMERCIALES");
-  const conditions = [["Forma de pago", payload.paymentTerms ?? payload.payment_terms ?? "Por definir", "Plazo", payload.deliveryTerms ?? payload.delivery_terms ?? "Por definir"], ["Moneda", `${quote.currency} - valores netos`, "Estado", quote.status]];
-  conditions.forEach(([a, b, c, d]) => {
-    const h = Math.max(20, Math.max(wrapText(b, 184, 7.6, true).length, wrapText(d, 160, 7.6, true).length) * 10 + 9);
-    ensure(h); cell(a, MARGIN, y, 74, h, true); cell(b, MARGIN + 74, y, 194, h); cell(c, MARGIN + 268, y, 73, h, true); cell(d, MARGIN + 341, y, width - 341, h); y -= h;
-  });
-  const validation = cleanText(payload.technicalValidation ?? payload.technical_validation);
-  if (validation) {
-    y -= 12;
-    const lines = wrapText(validation, width - 14, 8, true);
-    for (let i = 0; i < lines.length; i += 16) {
-      const chunk = lines.slice(i, i + 16); const h = 27 + chunk.length * 11; ensure(h);
-      pdf.rect(page, MARGIN, y - h, width, h, [1, 0.97, 0.85], [0.79, 0.57, 0.12]);
-      pdf.text(page, "VALIDACIÓN TÉCNICA", MARGIN + 7, y - 13, 8, true);
-      chunk.forEach((line, j) => pdf.text(page, line, MARGIN + 7, y - 27 - j * 11, 8, true)); y -= h + 5;
-    }
+  l.ensure(125);
+  totals.forEach(([label, value], i) => l.row([
+    { value: label, width: l.width / 2, bold: true, fill: PALE_BLUE },
+    { value: `${i === 1 && Number(value) ? "- " : ""}${quoteMoney(value)}`, width: l.width / 2, bold: true, align: "right", fill: i === 4 ? [0.83, 0.90, 0.98] : PALE_BLUE },
+  ]));
+  l.gap(18); l.section("CONDICIONES COMERCIALES");
+  for (const [a, b, c, d] of [["Forma de pago", payload.paymentTerms ?? payload.payment_terms ?? "Por definir", "Plazo", payload.deliveryTerms ?? payload.delivery_terms ?? "Por definir"], ["Moneda", `${quote.currency} - valores netos`, "Estado", quote.status]]) {
+    l.row([{ value: a, width: 74, bold: true, fill: PALE_BLUE }, { value: b, width: 194 }, { value: c, width: 73, bold: true, fill: PALE_BLUE }, { value: d, width: l.width - 341 }]);
   }
+  const validation = payload.technicalValidation ?? payload.technical_validation;
+  if (cleanText(validation)) { l.gap(); l.box("VALIDACIÓN TÉCNICA", validation, [1, 0.97, 0.85]); }
   for (const [label, value] of [["ALCANCE Y EXCLUSIONES", payload.scopeExclusions], ["OBSERVACIONES", payload.notes]]) {
-    if (!cleanText(value)) continue;
-    y -= 18; section(label); paragraph(value, false); y -= 3;
+    if (cleanText(value)) { l.gap(); l.section(label); l.paragraph(value); }
   }
-  y -= 18; ensure(71);
-  pdf.rect(page, MARGIN, y - 66, width / 2, 66, LIGHT, [0.78, 0.83, 0.89]);
-  pdf.rect(page, MARGIN + width / 2, y - 66, width / 2, 66, LIGHT, [0.78, 0.83, 0.89]);
-  pdf.text(page, "Por " + (companyValue(company, "commercial_name", "name") || "SOLIS Ingeniería y Servicios SpA"), MARGIN + 7, y - 15, 7.8, true);
-  pdf.text(page, companyValue(company, "representative", "contact_name") || "Responsable comercial", MARGIN + 7, y - 28, 8, true);
-  pdf.text(page, "Firma: __________________________", MARGIN + 7, y - 53, 8, true);
-  pdf.text(page, "Aceptación del cliente", MARGIN + width / 2 + 7, y - 15, 8, true);
-  pdf.text(page, "Nombre y firma: _____________________", MARGIN + width / 2 + 7, y - 53, 8, true);
-  pdf.pages.forEach((p, i) => drawFooter(pdf, p, company, i + 1, pdf.pages.length));
-  return pdf.toBytes();
+  l.gap(18); l.ensure(90);
+  l.row([
+    { value: `Por ${companyValue(company, "commercial_name", "name") || "SOLIS Ingeniería y Servicios SpA"}\n${companyValue(company, "representative", "contact_name") || "Responsable comercial"}\n\nFirma: __________________________`, width: l.width / 2, bold: true, fill: LIGHT },
+    { value: "Aceptación del cliente\n\n\nNombre y firma: _____________________", width: l.width / 2, bold: true, fill: LIGHT },
+  ]);
+  return l.bytes();
 }
 
 export function buildPurchaseOrderPdf(input: { company: CompanyData; supplier: SupplierPdfData; purchase: PurchasePdfData; items: PurchasePdfItem[] }) {
   const { company, supplier, purchase, items } = input;
-  const pdf = new PdfDocument();
-  let page = pdf.addPage();
-  drawHeader(pdf, page, company, "ORDEN DE COMPRA", purchase.number, purchase.status);
-  let y = PAGE_HEIGHT - 152;
-  labelValue(pdf, page, "Proveedor", supplier.name || purchase.supplier, MARGIN, y, 235);
-  labelValue(pdf, page, "RUT", supplier.taxId || "-", 310, y, 120);
-  labelValue(pdf, page, "Moneda", purchase.currency, 455, y, 95);
-  y -= 54;
-  labelValue(pdf, page, "Contacto", supplier.contactName || supplier.email || "-", MARGIN, y, 210);
-  labelValue(pdf, page, "Condición de pago", supplier.paymentTerms || "Por definir", 275, y, 175);
-  labelValue(pdf, page, "Fecha", (purchase.orderedAt || purchase.approvedAt || purchase.createdAt).slice(0, 10), 475, y, 75);
-  y -= 55;
-  if (purchase.workOrderNumber || purchase.project) {
-    labelValue(pdf, page, "Destino", [purchase.workOrderNumber, purchase.project].filter(Boolean).join(" · "), MARGIN, y, PAGE_WIDTH - MARGIN * 2);
-    y -= 52;
-  }
-  pdf.rect(page, MARGIN, y - 19, PAGE_WIDTH - MARGIN * 2, 23, LIGHT);
-  pdf.text(page, "DESCRIPCIÓN", MARGIN + 7, y - 10, 7.5, true, SLATE);
-  pdf.text(page, "CANT.", 380, y - 10, 7.5, true, SLATE, "right");
-  pdf.text(page, "UN.", 420, y - 10, 7.5, true, SLATE, "right");
-  pdf.text(page, "COSTO UNIT.", 500, y - 10, 7.5, true, SLATE, "right");
-  pdf.text(page, "TOTAL", PAGE_WIDTH - MARGIN - 7, y - 10, 7.5, true, SLATE, "right");
-  y -= 28;
-  for (const item of items) {
-    const lines = wrapText(item.description, 285, 8.5);
-    const rowHeight = Math.max(28, lines.length * 11 + 10);
-    if (y - rowHeight < 165) {
-      page = pdf.addPage();
-      drawHeader(pdf, page, company, "ORDEN DE COMPRA", purchase.number, "Continuación");
-      y = PAGE_HEIGHT - 154;
-    }
-    lines.forEach((line, index) => pdf.text(page, line, MARGIN + 7, y - 10 - index * 11, 8.5, index === 0));
-    pdf.text(page, item.quantity, 380, y - 10, 8.5, false, NAVY, "right");
-    pdf.text(page, item.unit, 420, y - 10, 8.5, false, NAVY, "right");
-    pdf.text(page, money(item.unitCost, purchase.currency), 500, y - 10, 8.5, false, NAVY, "right");
-    pdf.text(page, money(item.lineTotal, purchase.currency), PAGE_WIDTH - MARGIN - 7, y - 10, 8.5, true, NAVY, "right");
-    pdf.line(page, MARGIN, y - rowHeight, PAGE_WIDTH - MARGIN, y - rowHeight);
-    y -= rowHeight;
-  }
-  if (y < 400) {
-    page = pdf.addPage();
-    drawHeader(pdf, page, company, "ORDEN DE COMPRA", purchase.number, "Resumen y aprobación");
-    y = PAGE_HEIGHT - 159;
-  }
+  const l = new PdfLayout(company, "ORDEN DE COMPRA", purchase.number, purchase.status);
+  l.fields([{ label: "Proveedor", value: supplier.name || purchase.supplier }, { label: "RUT", value: supplier.taxId }, { label: "Moneda", value: purchase.currency }]);
+  l.fields([{ label: "Contacto", value: supplier.contactName || supplier.email }, { label: "Condición de pago", value: supplier.paymentTerms || "Por definir" }, { label: "Fecha", value: (purchase.orderedAt || purchase.approvedAt || purchase.createdAt).slice(0, 10) }]);
+  if (purchase.workOrderNumber || purchase.project) l.fields([{ label: "Destino", value: [purchase.workOrderNumber, purchase.project].filter(Boolean).join(" · ") }]);
+  const widths = [263, 43, 38, 83, l.width - 427];
+  const heading = () => l.row(["DESCRIPCIÓN", "CANT.", "UN.", "COSTO UNIT.", "TOTAL"].map((value, i) => ({ value, width: widths[i], bold: true, fill: PALE_BLUE })), true, 7, 4);
+  heading();
+  for (const item of items) l.row([item.description, item.quantity, item.unit, money(item.unitCost, purchase.currency), money(item.lineTotal, purchase.currency)].map((value, i) => ({ value, width: widths[i], bold: i === 4, align: i >= 3 ? "right" : "left" })), true, 8, 5, heading);
+  l.gap(18); l.ensure(170);
   const totals = [
     ["Subtotal", money(purchase.subtotal, purchase.currency)],
     [`Descuento (${Number(purchase.discountPercent || 0)}%)`, money(purchase.discountAmount, purchase.currency)],
     ...(Number(purchase.dispatchNet || 0) ? [["Despacho neto", money(purchase.dispatchNet || "0", purchase.currency)]] : []),
     ["Neto", money(purchase.netSubtotal, purchase.currency)],
     [`Impuesto (${Number(purchase.taxPercent || 0)}%)`, money(purchase.taxAmount, purchase.currency)],
+    ["TOTAL", money(purchase.total, purchase.currency)],
   ];
-  totals.forEach(([label, value], index) => {
-    pdf.text(page, label, 340, y - index * 19, 8.5, false, SLATE);
-    pdf.text(page, value, PAGE_WIDTH - MARGIN, y - index * 19, 9, true, NAVY, "right");
-  });
-  const totalY = y - (totals.length * 19 + 6);
-  pdf.rect(page, 332, totalY - 18, PAGE_WIDTH - MARGIN - 332, 32, NAVY);
-  pdf.text(page, "TOTAL", 340, totalY - 7, 9, true, [1, 1, 1]);
-  pdf.text(page, money(purchase.total, purchase.currency), PAGE_WIDTH - MARGIN - 8, totalY - 7, 12, true, AMBER, "right");
-  const approvalY = totalY - 52;
-  pdf.text(page, "APROBACIÓN INTERNA", MARGIN, approvalY, 8, true, SLATE);
-  pdf.text(page, `${purchase.approvedBy || "Pendiente"}${purchase.approvedAt ? ` · ${purchase.approvedAt.slice(0, 16).replace("T", " ")}` : ""}`, MARGIN, approvalY - 17, 9, true);
-  if (purchase.approvalNotes) wrapText(purchase.approvalNotes, 250, 8).slice(0, 3).forEach((line, index) => pdf.text(page, line, MARGIN, approvalY - 34 - index * 11, 8, false, SLATE));
-  let notesY = approvalY - 82;
-  pdf.text(page, "OBSERVACIONES", MARGIN, notesY, 8, true, SLATE);
-  notesY -= 17;
-  for (const line of wrapText(purchase.notes || "Sin observaciones.", PAGE_WIDTH - MARGIN * 2, 8)) {
-    if (notesY < 90) {
-      page = pdf.addPage();
-      drawHeader(pdf, page, company, "ORDEN DE COMPRA", purchase.number, "Condiciones de suministro");
-      notesY = PAGE_HEIGHT - 159;
-    }
-    pdf.text(page, line, MARGIN, notesY, 8);
-    notesY -= 11;
-  }
-  pdf.text(page, "Documento interno de abastecimiento. Los costos se cargan a la orden al entregar el material, no al recibir la compra.", MARGIN, 49, 7.5, false, SLATE);
-  pdf.pages.forEach((currentPage, index) => drawFooter(pdf, currentPage, company, index + 1, pdf.pages.length));
-  return pdf.toBytes();
+  for (const [label, value] of totals) l.row([{ value: label, width: l.width / 2, fill: PALE_BLUE, bold: true }, { value, width: l.width / 2, fill: PALE_BLUE, bold: true, align: "right" }]);
+  l.gap(18); l.section("APROBACIÓN INTERNA");
+  l.paragraph(`${purchase.approvedBy || "Pendiente"}${purchase.approvedAt ? ` · ${purchase.approvedAt.slice(0, 16).replace("T", " ")}` : ""}`, 9, true);
+  if (purchase.approvalNotes) l.paragraph(purchase.approvalNotes);
+  l.gap(); l.box("OBSERVACIONES", purchase.notes || "Sin observaciones.", LIGHT, 40);
+  l.paragraph("Documento interno de abastecimiento. Los costos se cargan a la orden al entregar el material, no al recibir la compra.", 7.5, false, SLATE);
+  return l.bytes();
 }
 
 export function buildWorkOrderPdf(input: { company: CompanyData; order: WorkOrderPdfData; quote: QuotePdfData; items: QuotePdfItem[]; execution?: WorkOrderExecutionPdfData }) {
   const { company, order, quote, items, execution } = input;
-  const pdf = new PdfDocument();
-  let page = pdf.addPage();
-  drawHeader(pdf, page, company, "ORDEN DE TRABAJO", order.number, `Origen: ${quote.number}`);
-  let y = PAGE_HEIGHT - 152;
-  labelValue(pdf, page, "Cliente", order.clientName, MARGIN, y, 235);
-  labelValue(pdf, page, "Proyecto", order.project, 310, y, 240);
-  y -= 54;
-  labelValue(pdf, page, "Responsable", order.responsible || "Sin asignar", MARGIN, y, 180);
-  labelValue(pdf, page, "Estado / prioridad", `${order.status} · ${order.priority || "Normal"}`, 245, y, 165);
-  labelValue(pdf, page, "Fecha", order.createdDate, 430, y, 120);
-  y -= 54;
-  labelValue(pdf, page, "Inicio planificado", order.plannedStart || "Por definir", MARGIN, y, 180);
-  labelValue(pdf, page, "Fin planificado", order.plannedEnd || "Por definir", 245, y, 180);
-  labelValue(pdf, page, "Compromiso", order.dueDate || "Por definir", 430, y, 120);
-  y -= 59;
-  pdf.text(page, "ALCANCE APROBADO", MARGIN, y, 8, true, SLATE);
-  y -= 17;
-
-  for (let index = 0; index < items.length; index += 1) {
-    const item = items[index];
-    const lines = wrapText(`${index + 1}. ${item.name}${item.detail ? ` - ${item.detail}` : ""}`, 405, 8.5).slice(0, 4);
-    const rowHeight = Math.max(25, lines.length * 11 + 8);
-    if (y - rowHeight < 105) {
-      page = pdf.addPage();
-      drawHeader(pdf, page, company, "ORDEN DE TRABAJO", order.number, `Origen: ${quote.number}`);
-      y = PAGE_HEIGHT - 152;
-      pdf.text(page, "ALCANCE APROBADO (CONTINUACIÓN)", MARGIN, y, 8, true, SLATE);
-      y -= 19;
-    }
-    lines.forEach((line, lineIndex) => pdf.text(page, line, MARGIN + 7, y - lineIndex * 11, 8.5, lineIndex === 0));
-    pdf.text(page, `${item.quantity} ${item.unit}`, PAGE_WIDTH - MARGIN, y, 8.5, true, NAVY, "right");
-    pdf.line(page, MARGIN, y - rowHeight + 7, PAGE_WIDTH - MARGIN, y - rowHeight + 7);
-    y -= rowHeight;
-  }
-
-  const notes = cleanText(order.notes);
-  if (y < 170) {
-    page = pdf.addPage();
-    drawHeader(pdf, page, company, "ORDEN DE TRABAJO", order.number, `Origen: ${quote.number}`);
-    y = PAGE_HEIGHT - 154;
-  }
-  pdf.rect(page, MARGIN, y - 104, PAGE_WIDTH - MARGIN * 2, 112, LIGHT, [0.86, 0.88, 0.91]);
-  pdf.text(page, "INSTRUCCIONES OPERATIVAS", MARGIN + 12, y - 14, 8, true, SLATE);
-  wrapText(notes || "Sin instrucciones adicionales.", PAGE_WIDTH - MARGIN * 2 - 24, 8.5).slice(0, 6).forEach((line, index) => pdf.text(page, line, MARGIN + 12, y - 31 - index * 12, 8.5));
-  if (execution && (execution.activities.length || execution.entries.length || execution.evidence.length || execution.signoff)) {
-    page = pdf.addPage();
-    drawHeader(pdf, page, company, "INFORME DE EJECUCIÓN", order.number, `Origen: ${quote.number}`);
-    y = PAGE_HEIGHT - 156;
-    const required = execution.activities.filter((activity) => activity.required);
-    const completed = required.filter((activity) => activity.completed).length;
-    const progress = required.length ? Math.round((completed / required.length) * 100) : 0;
-    const hours = execution.entries.filter((entry) => entry.type === "hours").reduce((sum, entry) => sum + entry.quantity, 0);
-    labelValue(pdf, page, "Avance obligatorio", `${progress}% (${completed}/${required.length})`, MARGIN, y, 180);
-    labelValue(pdf, page, "Horas registradas", String(hours), 245, y, 130);
-    labelValue(pdf, page, "Evidencias", String(execution.evidence.length), 430, y, 120);
-    y -= 58;
-    pdf.text(page, "CHECKLIST DE TERRENO", MARGIN, y, 8, true, SLATE);
-    y -= 18;
-    const activityLines = execution.activities.slice(0, 18);
-    for (const activity of activityLines) {
-      pdf.text(page, `${activity.completed ? "[OK]" : "[  ]"} ${activity.title}${activity.required ? " *" : ""}`, MARGIN + 5, y, 8.5, activity.completed, activity.completed ? [0.08, 0.45, 0.26] : SLATE);
-      y -= 13;
+  const l = new PdfLayout(company, "ORDEN DE TRABAJO", order.number, `Origen: ${quote.number}`);
+  l.fields([{ label: "Cliente", value: order.clientName }, { label: "Proyecto", value: order.project }]);
+  l.fields([{ label: "Responsable", value: order.responsible || "Sin asignar" }, { label: "Estado / prioridad", value: `${order.status} · ${order.priority || "Normal"}` }, { label: "Fecha", value: order.createdDate }]);
+  l.fields([{ label: "Inicio planificado", value: order.plannedStart || "Por definir" }, { label: "Fin planificado", value: order.plannedEnd || "Por definir" }, { label: "Compromiso", value: order.dueDate || "Por definir" }]);
+  l.section("ALCANCE APROBADO");
+  items.forEach((item, index) => l.row([{ value: `${index + 1}. ${item.name}${item.detail ? `\n${item.detail}` : ""}`, width: l.width - 85 }, { value: `${item.quantity} ${item.unit}`, width: 85, bold: true, align: "right" }]));
+  l.gap(); l.box("INSTRUCCIONES OPERATIVAS", order.notes || "Sin instrucciones adicionales.");
+  if (execution && (execution.activities.length || execution.entries.length || execution.evidence.length || execution.signoff || execution.materialRequests?.length)) {
+    l.next("INFORME DE EJECUCIÓN");
+    const required = execution.activities.filter(activity => activity.required);
+    const completed = required.filter(activity => activity.completed).length;
+    const progress = required.length ? Math.round(completed / required.length * 100) : 0;
+    const hours = execution.entries.filter(entry => entry.type === "hours").reduce((sum, entry) => sum + entry.quantity, 0);
+    l.fields([{ label: "Avance obligatorio", value: `${progress}% (${completed}/${required.length})` }, { label: "Horas registradas", value: String(hours) }, { label: "Evidencias", value: String(execution.evidence.length) }]);
+    l.section("CHECKLIST DE TERRENO");
+    for (const activity of execution.activities) {
+      l.paragraph(`${activity.completed ? "[OK]" : "[  ]"} ${activity.title}${activity.required ? " *" : ""}`, 8.5, activity.completed, activity.completed ? [0.08, 0.45, 0.26] : SLATE); l.gap(4);
     }
     if (execution.entries.length) {
-      y -= 8;
-      pdf.text(page, "REGISTROS REALES", MARGIN, y, 8, true, SLATE);
-      y -= 18;
-      for (const entry of execution.entries.slice(0, 14)) {
-        const line = `${entry.entryDate} · ${entry.type.toUpperCase()} · ${entry.description} · ${entry.quantity} ${entry.unit}`;
-        wrapText(line, PAGE_WIDTH - MARGIN * 2, 8).slice(0, 2).forEach((wrapped, index) => pdf.text(page, wrapped, MARGIN + 5, y - index * 11, 8));
-        y -= 14;
-        if (y < 150) break;
+      l.gap(); l.section("REGISTROS REALES");
+      for (const entry of execution.entries) {
+        l.paragraph(`${entry.entryDate} · ${entry.type.toUpperCase()} · ${entry.description} · ${entry.quantity} ${entry.unit}`, 8); l.gap(5);
       }
     }
+    if (execution.evidence.length) {
+      l.gap(); l.section("EVIDENCIAS REGISTRADAS");
+      for (const evidence of execution.evidence) { l.paragraph(`${evidence.createdAt.slice(0, 16).replace("T", " ")} · ${evidence.caption || "Sin descripción"}`, 8); l.gap(4); }
+    }
     if (execution.signoff) {
-      const signoffY = Math.max(130, y - 14);
-      pdf.rect(page, MARGIN, signoffY - 62, PAGE_WIDTH - MARGIN * 2, 70, LIGHT, [0.86, 0.88, 0.91]);
-      pdf.text(page, "CONFORMIDAD OPERATIVA REGISTRADA", MARGIN + 12, signoffY - 12, 8, true, SLATE);
-      pdf.text(page, `${execution.signoff.customerName}${execution.signoff.customerRole ? ` · ${execution.signoff.customerRole}` : ""}`, MARGIN + 12, signoffY - 30, 9, true);
-      pdf.text(page, `${execution.signoff.signedAt.slice(0, 16).replace("T", " ")} · Firma capturada en la PWA`, MARGIN + 12, signoffY - 46, 8, false, SLATE);
+      l.gap();
+      l.box("CONFORMIDAD OPERATIVA REGISTRADA", `${execution.signoff.customerName}${execution.signoff.customerRole ? ` · ${execution.signoff.customerRole}` : ""}\n${execution.signoff.signedAt.slice(0, 16).replace("T", " ")} · Firma capturada en la PWA\n${execution.signoff.notes || ""}`);
     }
     if (execution.materialRequests?.length) {
-      page = pdf.addPage();
-      drawHeader(pdf, page, company, "SOLICITUDES DE MATERIALES", order.number, `Origen: ${quote.number}`);
-      y = PAGE_HEIGHT - 156;
-      pdf.text(page, "TRAZABILIDAD DE ABASTECIMIENTO", MARGIN, y, 8, true, SLATE);
-      y -= 22;
-      for (const request of execution.materialRequests.slice(0, 24)) {
-        const materials = request.items.map((item) => `${item.quantity} ${item.unit} ${item.description}`).join("; ");
-        const line = `${request.status} · ${request.urgency}${request.neededDate ? ` · requerido ${request.neededDate}` : ""} · ${request.activityTitle} · ${materials}`;
-        const lines = wrapText(line, PAGE_WIDTH - MARGIN * 2 - 10, 8).slice(0, 3);
-        lines.forEach((wrapped, index) => pdf.text(page, wrapped, MARGIN + 5, y - index * 11, 8, index === 0 && request.status === "Entregada"));
-        y -= lines.length * 11 + 9;
-        pdf.line(page, MARGIN, y + 4, PAGE_WIDTH - MARGIN, y + 4);
-        if (y < 85) break;
+      l.next("SOLICITUDES DE MATERIALES"); l.section("TRAZABILIDAD DE ABASTECIMIENTO");
+      for (const request of execution.materialRequests) {
+        l.ensure(65);
+        l.paragraph(`${request.status} · ${request.urgency}${request.neededDate ? ` · requerido ${request.neededDate}` : ""} · ${request.activityTitle}`, 8, request.status === "Entregada");
+        l.paragraph(`Solicita: ${request.requestedBy}`, 8);
+        for (const item of request.items) l.paragraph(`${item.quantity} ${item.unit} ${item.description}`, 8);
+        l.gap(10);
       }
     }
   }
-  pdf.text(page, `Aprobación comercial: ${quote.approvedBy || "registrada"}${quote.approvedAt ? ` · ${quote.approvedAt.slice(0, 10)}` : ""}`, MARGIN, 49, 7.5, false, SLATE);
-  pdf.pages.forEach((currentPage, index) => drawFooter(pdf, currentPage, company, index + 1, pdf.pages.length));
-  return pdf.toBytes();
+  l.gap(); l.paragraph(`Aprobación comercial: ${quote.approvedBy || "registrada"}${quote.approvedAt ? ` · ${quote.approvedAt.slice(0, 10)}` : ""}`, 7.5, false, SLATE);
+  return l.bytes();
 }
 
 export function buildClosureReportPdf(input: { company: CompanyData; closure: ClosurePdfData }) {
   const { company, closure } = input;
-  const pdf = new PdfDocument();
-  const page = pdf.addPage();
-  drawHeader(pdf, page, company, "CIERRE DE ORDEN", closure.number, "Informe interno de rentabilidad real");
-  let y = PAGE_HEIGHT - 152;
-  labelValue(pdf, page, "Cliente", closure.clientName, MARGIN, y, 235);
-  labelValue(pdf, page, "Proyecto", closure.project, 310, y, 240);
-  y -= 55;
-  labelValue(pdf, page, "Cerrada por", closure.closedBy, MARGIN, y, 235);
-  labelValue(pdf, page, "Fecha de cierre", closure.closedAt.slice(0, 16).replace("T", " "), 310, y, 240);
-  y -= 68;
-  pdf.text(page, "RESULTADO ECONÓMICO FINAL", MARGIN, y, 8, true, SLATE);
-  y -= 22;
-  const metrics = [
-    ["Venta aprobada", money(closure.sale, closure.currency)],
-    ["Costo presupuestado", money(closure.budgetedCost, closure.currency)],
-    ["Costo real", money(closure.actualCost, closure.currency)],
-    ["Utilidad real", money(closure.actualProfit, closure.currency)],
-    ["Margen real", `${closure.actualMarginPercent.toFixed(2)}%`],
-    ["Desviación de costo", money(closure.budgetVariance, closure.currency)],
-  ];
-  metrics.forEach(([label, value], index) => {
-    const column = index % 2; const row = Math.floor(index / 2);
-    const x = MARGIN + column * 255; const top = y - row * 55;
-    pdf.rect(page, x, top - 38, 238, 46, index === 3 ? [0.91, 0.97, 0.93] : LIGHT, [0.86, 0.88, 0.91]);
-    pdf.text(page, label.toUpperCase(), x + 10, top - 9, 7, true, SLATE);
-    pdf.text(page, value, x + 10, top - 27, 11, true, NAVY);
-  });
-  y -= 185;
-  pdf.text(page, "COMPOSICIÓN DEL COSTO REAL", MARGIN, y, 8, true, SLATE);
-  y -= 20;
+  const l = new PdfLayout(company, "CIERRE DE ORDEN", closure.number, "Informe interno de rentabilidad real");
+  l.fields([{ label: "Cliente", value: closure.clientName }, { label: "Proyecto", value: closure.project }]);
+  l.fields([{ label: "Cerrada por", value: closure.closedBy }, { label: "Fecha de cierre", value: closure.closedAt.slice(0, 16).replace("T", " ") }]);
+  l.section("RESULTADO ECONÓMICO FINAL");
+  const metrics = [["Venta aprobada", money(closure.sale, closure.currency)], ["Costo presupuestado", money(closure.budgetedCost, closure.currency)], ["Costo real", money(closure.actualCost, closure.currency)], ["Utilidad real", money(closure.actualProfit, closure.currency)], ["Margen real", `${closure.actualMarginPercent.toFixed(2)}%`], ["Desviación de costo", money(closure.budgetVariance, closure.currency)]];
+  for (const [label, value] of metrics) l.row([{ value: label, width: l.width / 2, fill: LIGHT }, { value, width: l.width / 2, bold: true, align: "right", fill: LIGHT }]);
+  l.gap(); l.section("COMPOSICIÓN DEL COSTO REAL");
   const labels: Record<string, string> = { hours: "Mano de obra", material: "Materiales", service: "Servicios", expense: "Otros gastos", note: "Observaciones" };
   const breakdown = Object.entries(closure.breakdown).filter(([, value]) => value !== 0);
-  if (!breakdown.length) pdf.text(page, "Sin costos monetarios registrados.", MARGIN + 5, y, 8.5, false, SLATE);
-  breakdown.slice(0, 8).forEach(([key, value], index) => {
-    pdf.text(page, labels[key] || key, MARGIN + 5, y - index * 18, 8.5);
-    pdf.text(page, money(value, closure.currency), PAGE_WIDTH - MARGIN, y - index * 18, 8.5, true, NAVY, "right");
-  });
-  y -= Math.max(45, breakdown.length * 18 + 24);
-  pdf.text(page, "CONTROL DE CIERRE", MARGIN, y, 8, true, SLATE);
-  y -= 20;
-  const controls = [`${closure.counts.activities} actividades registradas`, `${closure.counts.materialRequests} solicitudes de material resueltas`, `${closure.counts.purchases} procesos de compra cerrados`, `${closure.counts.signoffs} conformidad(es) del cliente`];
-  controls.forEach((value, index) => pdf.text(page, `[OK] ${value}`, MARGIN + 5, y - index * 15, 8.5, true, [0.08, 0.45, 0.26]));
-  y -= 85;
-  pdf.rect(page, MARGIN, y - 82, PAGE_WIDTH - MARGIN * 2, 92, LIGHT, [0.86, 0.88, 0.91]);
-  pdf.text(page, "NOTA DE CIERRE", MARGIN + 12, y - 10, 8, true, SLATE);
-  wrapText(closure.closureNotes, PAGE_WIDTH - MARGIN * 2 - 24, 8.5).slice(0, 5).forEach((line, index) => pdf.text(page, line, MARGIN + 12, y - 28 - index * 12, 8.5));
-  pdf.text(page, "Documento interno. La orden y sus costos quedaron congelados al cerrar.", MARGIN, 49, 7.5, false, SLATE);
-  drawFooter(pdf, page, company, 1, 1);
-  return pdf.toBytes();
+  if (!breakdown.length) l.paragraph("Sin costos monetarios registrados.");
+  for (const [key, value] of breakdown) l.row([{ value: labels[key] || key, width: l.width * 0.65 }, { value: money(value, closure.currency), width: l.width * 0.35, bold: true, align: "right" }], false);
+  l.gap(); l.section("CONTROL DE CIERRE");
+  for (const value of [`${closure.counts.activities} actividades registradas`, `${closure.counts.materialRequests} solicitudes de material resueltas`, `${closure.counts.purchases} procesos de compra cerrados`, `${closure.counts.signoffs} conformidad(es) del cliente`]) l.paragraph(`[OK] ${value}`, 8.5, true, [0.08, 0.45, 0.26]);
+  l.gap(); l.box("NOTA DE CIERRE", closure.closureNotes || "Sin observaciones.", LIGHT, 40);
+  l.paragraph("Documento interno. La orden y sus costos quedaron congelados al cerrar.", 7.5, false, SLATE);
+  return l.bytes();
 }
 
 export function buildCollectionDocumentPdf(input: { company: CompanyData; document: CollectionPdfData }) {
   const { company, document } = input;
-  const pdf = new PdfDocument();
-  const page = pdf.addPage();
-  drawHeader(pdf, page, company, "DOCUMENTO DE COBRO", document.number, `${document.concept} · ${document.status}`);
-  let y = PAGE_HEIGHT - 152;
-  labelValue(pdf, page, "Cliente", document.clientName, MARGIN, y, 235);
-  labelValue(pdf, page, "Proyecto", document.project, 310, y, 240);
-  y -= 56;
-  labelValue(pdf, page, "Emisión", document.issueDate, MARGIN, y, 150);
-  labelValue(pdf, page, "Vencimiento", document.dueDate, 205, y, 150);
-  labelValue(pdf, page, "Moneda", document.currency, 430, y, 120);
-  y -= 70;
-  pdf.text(page, "RESUMEN DEL COBRO", MARGIN, y, 8, true, SLATE);
-  y -= 22;
-  const rows = [
-    ["Monto neto", money(document.netAmount, document.currency)],
-    [`IVA referencial (${document.taxPercent}%)`, money(document.taxAmount, document.currency)],
-    ["Total documento", money(document.totalAmount, document.currency)],
-    ["Pagos recibidos", money(document.paidAmount, document.currency)],
-  ];
-  rows.forEach(([label, value], index) => {
-    pdf.rect(page, MARGIN, y - index * 36 - 27, PAGE_WIDTH - MARGIN * 2, 32, index === 2 ? NAVY : LIGHT, [0.86, 0.88, 0.91]);
-    pdf.text(page, label, MARGIN + 12, y - index * 36 - 14, 9, index === 2, index === 2 ? [1, 1, 1] : SLATE);
-    pdf.text(page, value, PAGE_WIDTH - MARGIN - 12, y - index * 36 - 14, index === 2 ? 11 : 9, true, index === 2 ? AMBER : NAVY, "right");
-  });
-  y -= 168;
-  pdf.rect(page, MARGIN, y - 38, PAGE_WIDTH - MARGIN * 2, 46, document.balance > 0 ? [1, 0.96, 0.86] : [0.91, 0.97, 0.93], [0.86, 0.88, 0.91]);
-  pdf.text(page, "SALDO PENDIENTE", MARGIN + 12, y - 10, 8, true, SLATE);
-  pdf.text(page, money(document.balance, document.currency), PAGE_WIDTH - MARGIN - 12, y - 14, 13, true, NAVY, "right");
-  y -= 70;
-  pdf.text(page, "PAGOS REGISTRADOS", MARGIN, y, 8, true, SLATE);
-  y -= 20;
-  if (!document.payments.length) pdf.text(page, "Aún no existen pagos registrados.", MARGIN + 5, y, 8.5, false, SLATE);
-  document.payments.slice(0, 12).forEach((payment, index) => {
-    const line = `${payment.paymentDate} · ${payment.method} · ${payment.reference}`;
-    pdf.text(page, line, MARGIN + 5, y - index * 18, 8.5);
-    pdf.text(page, money(payment.amount, document.currency), PAGE_WIDTH - MARGIN, y - index * 18, 8.5, true, NAVY, "right");
-  });
-  y -= Math.max(45, document.payments.length * 18 + 25);
-  pdf.text(page, "OBSERVACIONES", MARGIN, y, 8, true, SLATE);
-  wrapText(document.notes || "Sin observaciones.", PAGE_WIDTH - MARGIN * 2, 8.5).slice(0, 5).forEach((line, index) => pdf.text(page, line, MARGIN, y - 18 - index * 12, 8.5));
-  pdf.text(page, "Documento interno de cobro y seguimiento. No reemplaza una factura electrónica DTE autorizada por el SII.", MARGIN, 49, 7.5, false, SLATE);
-  drawFooter(pdf, page, company, 1, 1);
-  return pdf.toBytes();
+  const l = new PdfLayout(company, "DOCUMENTO DE COBRO", document.number, `${document.concept} · ${document.status}`);
+  l.fields([{ label: "Cliente", value: document.clientName }, { label: "Proyecto", value: document.project }]);
+  l.fields([{ label: "Emisión", value: document.issueDate }, { label: "Vencimiento", value: document.dueDate }, { label: "Moneda", value: document.currency }]);
+  l.section("RESUMEN DEL COBRO");
+  for (const [label, value] of [["Monto neto", money(document.netAmount, document.currency)], [`IVA referencial (${document.taxPercent}%)`, money(document.taxAmount, document.currency)], ["Total documento", money(document.totalAmount, document.currency)], ["Pagos recibidos", money(document.paidAmount, document.currency)], ["SALDO PENDIENTE", money(document.balance, document.currency)]]) l.row([{ value: label, width: l.width / 2, fill: PALE_BLUE, bold: true }, { value, width: l.width / 2, bold: true, fill: PALE_BLUE, align: "right" }]);
+  l.gap(); l.section("PAGOS REGISTRADOS");
+  if (!document.payments.length) l.paragraph("Aún no existen pagos registrados.");
+  for (const payment of document.payments) l.row([{ value: `${payment.paymentDate} · ${payment.method} · ${payment.reference}`, width: l.width * 0.7 }, { value: money(payment.amount, document.currency), width: l.width * 0.3, bold: true, align: "right" }]);
+  l.gap(); l.box("OBSERVACIONES", document.notes || "Sin observaciones.", LIGHT, 40);
+  l.paragraph("Documento interno de cobro y seguimiento. No reemplaza una factura electrónica DTE autorizada por el SII.", 7.5, false, SLATE);
+  return l.bytes();
 }
 
 export function buildOrderMaterialsPdf(data: OrderMaterialsData) {
-  const pdf = new PdfDocument();
-  let page: PdfPage; let y = 0;
-  const next = () => { page = pdf.addPage(); drawHeader(pdf, page, data.company, "MATERIALES DE TRABAJO", data.order.number, data.quoteNumber); y = PAGE_HEIGHT - 154; };
-  const line = (text: string, bold = false, size = 8) => { for (const value of wrapText(text, PAGE_WIDTH - MARGIN * 2 - 12, size)) { if (y < 66) next(); pdf.text(page, value, MARGIN + 6, y, size, bold); y -= 12; } };
-  next();
-  line(`${data.order.clientName} · ${data.order.project}`, true, 9);
-  line(`Responsable: ${data.order.responsible || "Por asignar"} · Estado: ${data.order.status}`);
-  line(`Consulta: ${data.preparedAt.slice(0, 16).replace("T", " ")} UTC. Verifique cambios posteriores antes de retirar materiales.`);
-  y -= 12;
-  const heading = (title: string) => { if (y < 110) next(); pdf.rect(page, MARGIN, y - 9, PAGE_WIDTH - MARGIN * 2, 23, PALE_BLUE); pdf.text(page, title, MARGIN + 6, y - 1, 9, true, BLUE); y -= 30; };
+  const l = new PdfLayout(data.company, "MATERIALES DE TRABAJO", data.order.number, data.quoteNumber);
+  l.paragraph(`${data.order.clientName} · ${data.order.project}`, 9, true);
+  l.paragraph(`Responsable: ${data.order.responsible || "Por asignar"} · Estado: ${data.order.status}`);
+  l.paragraph(`Consulta: ${data.preparedAt.slice(0, 16).replace("T", " ")} UTC. Verifique cambios posteriores antes de retirar materiales.`);
+  l.gap();
   const material = (item: { description: string; quantity: number; unit: string; code?: string; specification?: string; brand?: string }, index: number) => {
-    if (y < 134) next();
-    line(`${index + 1}. ${item.code ? item.code + " · " : ""}${item.description}`, true);
-    if (item.specification || item.brand) line([item.brand, item.specification].filter(Boolean).join(" / "));
-    line(`Cantidad: ${item.quantity.toLocaleString("es-CL")} ${item.unit}     Entregado: __________     Fecha: __________`);
-    line("Observación: __________________________________________________________________");
-    y -= 4; pdf.line(page, MARGIN, y, PAGE_WIDTH - MARGIN, y); y -= 15;
+    l.ensure(100);
+    l.paragraph(`${index + 1}. ${item.code ? item.code + " · " : ""}${item.description}`, 8.5, true);
+    if (item.specification || item.brand) l.paragraph([item.brand, item.specification].filter(Boolean).join(" / "));
+    l.paragraph(`Cantidad: ${item.quantity.toLocaleString("es-CL")} ${item.unit}     Entregado: __________     Fecha: __________`);
+    l.paragraph("Observación: __________________________________________________________________"); l.gap();
   };
-  for (const group of data.groups) { heading(group.title); group.materials.forEach(material); }
+  for (const group of data.groups) { l.section(group.title); group.materials.forEach(material); }
   if (data.requests.length) {
-    heading("SOLICITUDES DE TERRENO");
-    line("Se muestran por separado. Pueden coincidir con el presupuesto; no sumarlas automáticamente.");
-    for (const request of data.requests) { heading(`Solicitud ${request.number} · ${request.status}`); request.items.forEach(material); }
+    l.section("SOLICITUDES DE TERRENO");
+    l.paragraph("Se muestran por separado. Pueden coincidir con el presupuesto; no sumarlas automáticamente.");
+    for (const request of data.requests) { l.section(`Solicitud ${request.number} · ${request.status}`); request.items.forEach(material); }
   }
-  if (!data.groups.length && !data.requests.length) line("Esta orden aún no tiene materiales desglosados.");
-  if (y < 130) next(); y -= 15;
-  line("Entrega de bodega: _____________________    Recibe: _____________________", true);
-  line("Fecha: _____________________    Firma: _____________________");
-  pdf.pages.forEach((p, i) => drawFooter(pdf, p, data.company, i + 1, pdf.pages.length)); return pdf.toBytes();
+  if (!data.groups.length && !data.requests.length) l.paragraph("Esta orden aún no tiene materiales desglosados.");
+  l.gap(); l.ensure(50);
+  l.paragraph("Entrega de bodega: _____________________    Recibe: _____________________", 8.5, true);
+  l.paragraph("Fecha: _____________________    Firma: _____________________");
+  return l.bytes();
 }
 
 export function buildAccountingRequestPdf(packet: AccountingPacket) {
-  const pdf = new PdfDocument(); let page!: PdfPage; let y = 0;
   const company = { commercial_name: packet.issuer.name, tax_id: packet.issuer.taxId, address: packet.issuer.address, email: packet.issuer.email, phone: packet.issuer.phone };
-  const next = () => { page = pdf.addPage(); drawHeader(pdf, page, company, "SOLICITUD DE FACTURACIÓN", packet.number, packet.billingNumber); y = PAGE_HEIGHT - 160; };
-  next();
+  const l = new PdfLayout(company, "SOLICITUD DE FACTURACIÓN", packet.number, packet.billingNumber);
   for (const paragraph of accountingText(packet).split("\n")) {
-    for (const line of wrapText(paragraph, PAGE_WIDTH - MARGIN * 2 - 8, 9)) {
-      if (y < 68) next();
-      pdf.text(page, line, MARGIN + 4, y, 9, paragraph.startsWith("SOLICITUD INTERNA") || paragraph.startsWith("Total:")); y -= 14;
-    }
-    y -= 5;
+    l.paragraph(paragraph, 9, paragraph.startsWith("SOLICITUD INTERNA") || paragraph.startsWith("Total:")); l.gap(5);
   }
-  if (y < 90) next();
-  pdf.text(page, `Preparada por ${packet.preparedBy} · ${packet.preparedAt.slice(0, 10)}`, MARGIN, y - 8, 8, false, SLATE);
-  pdf.pages.forEach((p, i) => drawFooter(pdf, p, company, i + 1, pdf.pages.length)); return pdf.toBytes();
+  l.gap(); l.paragraph(`Preparada por ${packet.preparedBy} · ${packet.preparedAt.slice(0, 10)}`, 8, false, SLATE);
+  return l.bytes();
 }

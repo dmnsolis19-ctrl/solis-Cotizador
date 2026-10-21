@@ -1,0 +1,620 @@
+TAP version 13
+# 8:14:32 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+# Subtest: calculates net, tax and total without rounding away payment precision
+ok 1 - calculates net, tax and total without rounding away payment precision
+  ---
+  duration_ms: 245.926846
+  type: 'test'
+  ...
+# Subtest: derives issued, partial, overdue, paid and void states
+ok 2 - derives issued, partial, overdue, paid and void states
+  ---
+  duration_ms: 0.466192
+  type: 'test'
+  ...
+# Subtest: summarizes cash without counting drafts or void documents
+ok 3 - summarizes cash without counting drafts or void documents
+  ---
+  duration_ms: 0.323708
+  type: 'test'
+  ...
+# Subtest: keeps collection documents non-fiscal and auditable
+ok 4 - keeps collection documents non-fiscal and auditable
+  ---
+  duration_ms: 162.58664
+  type: 'test'
+  ...
+# Subtest: creates a collection PDF that explicitly does not replace an SII DTE
+ok 5 - creates a collection PDF that explicitly does not replace an SII DTE
+  ---
+  duration_ms: 133.916553
+  type: 'test'
+  ...
+# 8:14:32 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+# Subtest: CSV handles UTF-8, escaped quotes and multiline text; template columns round trip
+ok 6 - CSV handles UTF-8, escaped quotes and multiline text; template columns round trip
+  ---
+  duration_ms: 3.28982
+  type: 'test'
+  ...
+# Subtest: preview rejects duplicates, missing IVA, invalid units, bad currency and negative prices
+ok 7 - preview rejects duplicates, missing IVA, invalid units, bad currency and negative prices
+  ---
+  duration_ms: 2.658989
+  type: 'test'
+  ...
+# Subtest: import preview writes nothing; commit preserves company, unrelated data and approved quote
+ok 8 - import preview writes nothing; commit preserves company, unrelated data and approved quote
+  ---
+  duration_ms: 12.489695
+  type: 'test'
+  ...
+# Subtest: explicit add omits existing codes, update omits new codes, and additional payload survives
+ok 9 - explicit add omits existing codes, update omits new codes, and additional payload survives
+  ---
+  duration_ms: 4.340784
+  type: 'test'
+  ...
+# Subtest: invalid rows and stale previews cannot partially import
+ok 10 - invalid rows and stale previews cannot partially import
+  ---
+  duration_ms: 3.662536
+  type: 'test'
+  ...
+# Subtest: transaction rolls back earlier rows on write failure and concurrent CAS failure
+ok 11 - transaction rolls back earlier rows on write failure and concurrent CAS failure
+  ---
+  duration_ms: 4.645203
+  type: 'test'
+  ...
+# Subtest: 200-row import stays within D1 bind limits and permissions isolate accounts
+ok 12 - 200-row import stays within D1 bind limits and permissions isolate accounts
+  ---
+  duration_ms: 23.276421
+  type: 'test'
+  ...
+# Subtest: bundles persist with CAS and stay scoped to their owner
+ok 13 - bundles persist with CAS and stay scoped to their owner
+  ---
+  duration_ms: 5.665291
+  type: 'test'
+  ...
+# Subtest: bundle application makes independent copies, edits quantities and excludes double charges
+ok 14 - bundle application makes independent copies, edits quantities and excludes double charges
+  ---
+  duration_ms: 0.474435
+  type: 'test'
+  ...
+# Subtest: labor keeps public sales distinct from internal worker cost and calculates each crew member
+ok 15 - labor keeps public sales distinct from internal worker cost and calculates each crew member
+  ---
+  duration_ms: 0.51704
+  type: 'test'
+  ...
+# Subtest: comparison counts full packages, surplus and shipping once; rejects stale, unavailable and different currency offers
+ok 16 - comparison counts full packages, surplus and shipping once; rejects stale, unavailable and different currency offers
+  ---
+  duration_ms: 0.538481
+  type: 'test'
+  ...
+# Subtest: comparison prepares existing purchase with shipping, quantities and approval status preserved
+ok 17 - comparison prepares existing purchase with shipping, quantities and approval status preserved
+  ---
+  duration_ms: 6.273507
+  type: 'test'
+  ...
+# Subtest: comparison preparation is repeatable without adding packages and approved purchases cannot change
+ok 18 - comparison preparation is repeatable without adding packages and approved purchases cannot change
+  ---
+  duration_ms: 5.245739
+  type: 'test'
+  ...
+# Subtest: offline save handlers replay receipts without duplicating bundles or comparators
+ok 19 - offline save handlers replay receipts without duplicating bundles or comparators
+  ---
+  duration_ms: 117.928455
+  type: 'test'
+  ...
+# Subtest: quote payloads and offline reopening retain bundle identity while snapshots stay independent
+ok 20 - quote payloads and offline reopening retain bundle identity while snapshots stay independent
+  ---
+  duration_ms: 24.313731
+  type: 'test'
+  ...
+# Subtest: purchase PDF includes dispatch and all supplier conditions across pages
+ok 21 - purchase PDF includes dispatch and all supplier conditions across pages
+  ---
+  duration_ms: 117.960788
+  type: 'test'
+  ...
+# 8:14:34 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+# Subtest: normalizes and validates Chilean RUT values
+ok 22 - normalizes and validates Chilean RUT values
+  ---
+  duration_ms: 188.823229
+  type: 'test'
+  ...
+# Subtest: connects client editing across UI, API, audit and offline sync
+ok 23 - connects client editing across UI, API, audit and offline sync
+  ---
+  duration_ms: 8.802721
+  type: 'test'
+  ...
+# Subtest: keeps quote line focus stable and contains its responsive table
+ok 24 - keeps quote line focus stable and contains its responsive table
+  ---
+  duration_ms: 9.480323
+  type: 'test'
+  ...
+# Subtest: calculates available stock, minimum alerts and allocation shortages
+ok 25 - calculates available stock, minimum alerts and allocation shortages
+  ---
+  duration_ms: 56.728056
+  type: 'test'
+  ...
+# Subtest: keeps reservations, issues, returns and purchases auditable
+ok 26 - keeps reservations, issues, returns and purchases auditable
+  ---
+  duration_ms: 124.844782
+  type: 'test'
+  ...
+# Subtest: blocks order completion while supply remains unresolved
+ok 27 - blocks order completion while supply remains unresolved
+  ---
+  duration_ms: 25.386356
+  type: 'test'
+  ...
+# Subtest: sums internal materials into exactly one commercial global without double counting
+ok 28 - sums internal materials into exactly one commercial global without double counting
+  ---
+  duration_ms: 2.888867
+  type: 'test'
+  ...
+# Subtest: distinguishes markup from margin and accounts for indirect costs and discount
+ok 29 - distinguishes markup from margin and accounts for indirect costs and discount
+  ---
+  duration_ms: 0.605786
+  type: 'test'
+  ...
+# Subtest: updates quantities, keeps manual prices and handles decimal quantities
+ok 30 - updates quantities, keeps manual prices and handles decimal quantities
+  ---
+  duration_ms: 2.906223
+  type: 'test'
+  ...
+# Subtest: rejects duplicate identities, empty lists, excessive amounts and non-finite values
+ok 31 - rejects duplicate identities, empty lists, excessive amounts and non-finite values
+  ---
+  duration_ms: 0.951559
+  type: 'test'
+  ...
+# Subtest: consolidates only identical technical materials and omits confidential properties
+ok 32 - consolidates only identical technical materials and omits confidential properties
+  ---
+  duration_ms: 0.391862
+  type: 'test'
+  ...
+# Subtest: exports Unicode CSV with blank supplier price fields and prevents formula execution
+ok 33 - exports Unicode CSV with blank supplier price fields and prevents formula execution
+  ---
+  duration_ms: 0.361947
+  type: 'test'
+  ...
+# Subtest: supplier PDF paginates and includes full technical specifications without costs
+ok 34 - supplier PDF paginates and includes full technical specifications without costs
+  ---
+  duration_ms: 437.244552
+  type: 'test'
+  ...
+# Subtest: sharing validates recipients and encodes special characters without exposing private URLs
+ok 35 - sharing validates recipients and encodes special characters without exposing private URLs
+  ---
+  duration_ms: 6.065771
+  type: 'test'
+  ...
+# 8:14:38 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+# Subtest: persists global materials, reopens without duplication, guards revisions and isolates tenants
+ok 36 - persists global materials, reopens without duplication, guards revisions and isolates tenants
+  ---
+  duration_ms: 50.312381
+  type: 'test'
+  ...
+# Subtest: direct email rejects internal documents, requires configuration and deduplicates accepted sends
+ok 37 - direct email rejects internal documents, requires configuration and deduplicates accepted sends
+  ---
+  duration_ms: 8.77529
+  type: 'test'
+  ...
+# 8:14:40 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+# Subtest: numeric state allows deleting to empty and typing a replacement across parent refreshes
+ok 38 - numeric state allows deleting to empty and typing a replacement across parent refreshes
+  ---
+  duration_ms: 6.839973
+  type: 'test'
+  ...
+# Subtest: zero is selected on focus/click and leading zero digits do not change the entered amount
+ok 39 - zero is selected on focus/click and leading zero digits do not change the entered amount
+  ---
+  duration_ms: 0.494475
+  type: 'test'
+  ...
+# Subtest: decimal editing survives numeric conversion and external value changes replace the draft
+ok 40 - decimal editing survives numeric conversion and external value changes replace the draft
+  ---
+  duration_ms: 0.317088
+  type: 'test'
+  ...
+# Subtest: string and uncontrolled inputs retain their contracts; refs, callbacks and read-only fields are preserved
+ok 41 - string and uncontrolled inputs retain their contracts; refs, callbacks and read-only fields are preserved
+  ---
+  duration_ms: 0.346232
+  type: 'test'
+  ...
+# 8:14:41 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+# Subtest: offline writes wait for durable commit and preserve their identifiers when reconnecting
+ok 42 - offline writes wait for durable commit and preserve their identifiers when reconnecting
+  ---
+  duration_ms: 6.187178
+  type: 'test'
+  ...
+# Subtest: network failures stay queued and a conflict blocks dependent operations until reviewed
+ok 43 - network failures stay queued and a conflict blocks dependent operations until reviewed
+  ---
+  duration_ms: 2.550235
+  type: 'test'
+  ...
+# Subtest: cached records are available offline only in their original user scope and never bypass authorization errors
+ok 44 - cached records are available offline only in their original user scope and never bypass authorization errors
+  ---
+  duration_ms: 2.113988
+  type: 'test'
+  ...
+# Subtest: reopening field execution retains unsynced entries without duplicates or technician costs
+ok 45 - reopening field execution retains unsynced entries without duplicates or technician costs
+  ---
+  duration_ms: 284.201553
+  type: 'test'
+  ...
+# Subtest: cached quote details preserve manual items separately from material globals when reopening offline
+ok 46 - cached quote details preserve manual items separately from material globals when reopening offline
+  ---
+  duration_ms: 2.518457
+  type: 'test'
+  ...
+# Subtest: validates the supported offline operation contracts
+ok 47 - validates the supported offline operation contracts
+  ---
+  duration_ms: 84.051984
+  type: 'test'
+  ...
+# Subtest: uses IndexedDB, isolates each user's queue and keeps APIs network-only
+ok 48 - uses IndexedDB, isolates each user's queue and keeps APIs network-only
+  ---
+  duration_ms: 142.291477
+  type: 'test'
+  ...
+# Subtest: uses the Chilean business date instead of UTC for operational records
+ok 49 - uses the Chilean business date instead of UTC for operational records
+  ---
+  duration_ms: 65.420814
+  type: 'test'
+  ...
+# Subtest: reserves document numbers atomically and ships the sequence migration
+ok 50 - reserves document numbers atomically and ships the sequence migration
+  ---
+  duration_ms: 122.352985
+  type: 'test'
+  ...
+# Subtest: edits only unlocked quote drafts with optimistic concurrency
+ok 51 - edits only unlocked quote drafts with optimistic concurrency
+  ---
+  duration_ms: 14.726503
+  type: 'test'
+  ...
+# Subtest: calculates checklist progress, hours, materials and real cost
+ok 52 - calculates checklist progress, hours, materials and real cost
+  ---
+  duration_ms: 60.843594
+  type: 'test'
+  ...
+# Subtest: protects field evidence and sign-offs behind order assignment
+ok 53 - protects field evidence and sign-offs behind order assignment
+  ---
+  duration_ms: 211.562521
+  type: 'test'
+  ...
+# Subtest: keeps material requests linked to activities and separates approval
+ok 54 - keeps material requests linked to activities and separates approval
+  ---
+  duration_ms: 199.012689
+  type: 'test'
+  ...
+# Subtest: hashes passwords with a unique salt and verifies in constant-time style
+ok 55 - hashes passwords with a unique salt and verifies in constant-time style
+  ---
+  duration_ms: 201.975578
+  type: 'test'
+  ...
+# Subtest: keeps the 210,000-round password work factor within Cloudflare's per-call limit
+ok 56 - keeps the 210,000-round password work factor within Cloudflare's per-call limit
+  ---
+  duration_ms: 260.582197
+  type: 'test'
+  ...
+# Subtest: uses secure server sessions and protects login attempts
+ok 57 - uses secure server sessions and protects login attempts
+  ---
+  duration_ms: 1.994587
+  type: 'test'
+  ...
+# Subtest: creates a commercial PDF without internal financial labels
+ok 58 - creates a commercial PDF without internal financial labels
+  ---
+  duration_ms: 582.48624
+  type: 'test'
+  ...
+# Subtest: creates an operational work-order PDF linked to the approved quote
+ok 59 - creates an operational work-order PDF linked to the approved quote
+  ---
+  duration_ms: 31.042963
+  type: 'test'
+  ...
+# Subtest: creates an internal purchase-order PDF with approval and totals
+ok 60 - creates an internal purchase-order PDF with approval and totals
+  ---
+  duration_ms: 10.244496
+  type: 'test'
+  ...
+# Subtest: cotizacion: retains complete long fields, all records, and text inside page margins
+ok 61 - cotizacion: retains complete long fields, all records, and text inside page margins
+  ---
+  duration_ms: 60.080843
+  type: 'test'
+  ...
+# Subtest: compra: retains complete long fields, all records, and text inside page margins
+ok 62 - compra: retains complete long fields, all records, and text inside page margins
+  ---
+  duration_ms: 49.725651
+  type: 'test'
+  ...
+# Subtest: trabajo: retains complete long fields, all records, and text inside page margins
+ok 63 - trabajo: retains complete long fields, all records, and text inside page margins
+  ---
+  duration_ms: 73.192712
+  type: 'test'
+  ...
+# Subtest: cierre: retains complete long fields, all records, and text inside page margins
+ok 64 - cierre: retains complete long fields, all records, and text inside page margins
+  ---
+  duration_ms: 29.581761
+  type: 'test'
+  ...
+# Subtest: cobro: retains complete long fields, all records, and text inside page margins
+ok 65 - cobro: retains complete long fields, all records, and text inside page margins
+  ---
+  duration_ms: 31.017715
+  type: 'test'
+  ...
+# Subtest: proveedores: retains complete long fields, all records, and text inside page margins
+ok 66 - proveedores: retains complete long fields, all records, and text inside page margins
+  ---
+  duration_ms: 19.089221
+  type: 'test'
+  ...
+# Subtest: materiales: retains complete long fields, all records, and text inside page margins
+ok 67 - materiales: retains complete long fields, all records, and text inside page margins
+  ---
+  duration_ms: 24.774102
+  type: 'test'
+  ...
+# Subtest: contador: retains complete long fields, all records, and text inside page margins
+ok 68 - contador: retains complete long fields, all records, and text inside page margins
+  ---
+  duration_ms: 19.111174
+  type: 'test'
+  ...
+# Subtest: calculates purchase totals and weighted inventory cost
+ok 69 - calculates purchase totals and weighted inventory cost
+  ---
+  duration_ms: 63.677656
+  type: 'test'
+  ...
+# Subtest: tracks partial and complete purchase receipts
+ok 70 - tracks partial and complete purchase receipts
+  ---
+  duration_ms: 0.516689
+  type: 'test'
+  ...
+# Subtest: charges projects only on issue and reverses returned material
+ok 71 - charges projects only on issue and reverses returned material
+  ---
+  duration_ms: 121.939968
+  type: 'test'
+  ...
+# Subtest: requires approval before ordering and ordering before receipt
+ok 72 - requires approval before ordering and ordering before receipt
+  ---
+  duration_ms: 12.573217
+  type: 'test'
+  ...
+# 8:14:50 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+# Subtest: settings preserve legacy economics, reject stale updates and restrict administration
+ok 73 - settings preserve legacy economics, reject stale updates and restrict administration
+  ---
+  duration_ms: 15.130752
+  type: 'test'
+  ...
+# Subtest: imports sourced prices with correct package and VAT conversion and no overwrites
+ok 74 - imports sourced prices with correct package and VAT conversion and no overwrites
+  ---
+  duration_ms: 22.103896
+  type: 'test'
+  ...
+# Subtest: work-order materials isolate assignments and exclude all internal prices
+ok 75 - work-order materials isolate assignments and exclude all internal prices
+  ---
+  duration_ms: 8.083908
+  type: 'test'
+  ...
+# Subtest: accounting snapshots only the collection amount and prevents duplicate requests and emails
+ok 76 - accounting snapshots only the collection amount and prevents duplicate requests and emails
+  ---
+  duration_ms: 51.01547
+  type: 'test'
+  ...
+# Subtest: a rejected or uncertain email is not resent automatically
+ok 77 - a rejected or uncertain email is not resent automatically
+  ---
+  duration_ms: 18.27947
+  type: 'test'
+  ...
+# Subtest: offline sync reserves once before mutations, replays receipts and rejects session changes
+ok 78 - offline sync reserves once before mutations, replays receipts and rejects session changes
+  ---
+  duration_ms: 12.557804
+  type: 'test'
+  ...
+# 8:14:53 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+# Subtest: price references normalize package quantities and explicitly leave unknown VAT unresolved
+ok 79 - price references normalize package quantities and explicitly leave unknown VAT unresolved
+  ---
+  duration_ms: 267.059905
+  type: 'test'
+  ...
+# Subtest: classic commercial PDFs embed logo and fonts, paginate all scope and retain complete terms
+ok 80 - classic commercial PDFs embed logo and fonts, paginate all scope and retain complete terms
+  ---
+  duration_ms: 337.52449
+  type: 'test'
+  ...
+# Subtest: calculates actual profit, margin, variance and cost breakdown
+ok 81 - calculates actual profit, margin, variance and cost breakdown
+  ---
+  duration_ms: 63.554577
+  type: 'test'
+  ...
+# Subtest: blocks closure until execution, materials, purchases and sign-off are complete
+ok 82 - blocks closure until execution, materials, purchases and sign-off are complete
+  ---
+  duration_ms: 0.532954
+  type: 'test'
+  ...
+# Subtest: freezes closed orders and protects closure documents by permission
+ok 83 - freezes closed orders and protects closure documents by permission
+  ---
+  duration_ms: 315.398906
+  type: 'test'
+  ...
+# Subtest: creates the internal closure PDF with frozen financial result
+ok 84 - creates the internal closure PDF with frozen financial result
+  ---
+  duration_ms: 179.510458
+  type: 'test'
+  ...
+# 8:14:54 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+# Subtest: new quote retains client, project and catalog items across background refresh and callback updates
+ok 85 - new quote retains client, project and catalog items across background refresh and callback updates
+  ---
+  duration_ms: 17.748084
+  type: 'test'
+  ...
+# Subtest: editing a draft loads once and retains unsaved changes after refreshed quote/settings objects
+ok 86 - editing a draft loads once and retains unsaved changes after refreshed quote/settings objects
+  ---
+  duration_ms: 10.537827
+  type: 'test'
+  ...
+# Subtest: a fresh opening starts clean with current defaults and stale loads are cancelled on close
+ok 87 - a fresh opening starts clean with current defaults and stale loads are cancelled on close
+  ---
+  duration_ms: 8.538694
+  type: 'test'
+  ...
+# Subtest: parent mounts the quote editor only while open and does not key it by pricing defaults
+ok 88 - parent mounts the quote editor only while open and does not key it by pricing defaults
+  ---
+  duration_ms: 2.010341
+  type: 'test'
+  ...
+# Subtest: declares SOLIS metadata and a valid installable manifest
+ok 89 - declares SOLIS metadata and a valid installable manifest
+  ---
+  duration_ms: 4.478422
+  type: 'test'
+  ...
+# 8:14:57 PM [vite] (client) Re-optimizing dependencies because vite config has changed
+# Subtest: enforces the intended permission matrix for the four roles
+ok 90 - enforces the intended permission matrix for the four roles
+  ---
+  duration_ms: 178.747948
+  type: 'test'
+  ...
+# Subtest: requires authenticated roles and audits every mutable business endpoint
+ok 91 - requires authenticated roles and audits every mutable business endpoint
+  ---
+  duration_ms: 224.899445
+  type: 'test'
+  ...
+# Subtest: protects assignment and writes a notification for the selected technician
+ok 92 - protects assignment and writes a notification for the selected technician
+  ---
+  duration_ms: 2.434721
+  type: 'test'
+  ...
+# Subtest: emits the catalog's animation and scrolling utilities
+ok 93 - emits the catalog's animation and scrolling utilities
+  ---
+  duration_ms: 25.992149
+  type: 'test'
+  ...
+# Subtest: forwards progress semantics to the primitive
+ok 94 - forwards progress semantics to the primitive
+  ---
+  duration_ms: 429.524365
+  type: 'test'
+  ...
+# Subtest: emits chart themes for the starter's media dark mode
+ok 95 - emits chart themes for the starter's media dark mode
+  ---
+  duration_ms: 322.682188
+  type: 'test'
+  ...
+# Subtest: renders sidebar skeletons deterministically
+ok 96 - renders sidebar skeletons deterministically
+  ---
+  duration_ms: 164.192708
+  type: 'test'
+  ...
+# Subtest: calculates SOLIS cost, discount, tax and margin rules
+ok 97 - calculates SOLIS cost, discount, tax and margin rules
+  ---
+  duration_ms: 4.929222
+  type: 'test'
+  ...
+# Subtest: enforces controlled revision and approval workflow
+ok 98 - enforces controlled revision and approval workflow
+  ---
+  duration_ms: 3.313927
+  type: 'test'
+  ...
+# Subtest: restricts technicians to their assigned work orders
+ok 99 - restricts technicians to their assigned work orders
+  ---
+  duration_ms: 204.884935
+  type: 'test'
+  ...
+# Subtest: classifies overdue and near-due work without closing completed orders
+ok 100 - classifies overdue and near-due work without closing completed orders
+  ---
+  duration_ms: 0.51072
+  type: 'test'
+  ...
+1..100
+# tests 100
+# suites 0
+# pass 100
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 28768.949763

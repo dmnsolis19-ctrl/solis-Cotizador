@@ -1,0 +1,82 @@
+{
+  "version": "3.6.2",
+  "date": "2026-10-20",
+  "method": "PDF reales del generador TypeScript; Poppler a PNG, inspección visual de las 32 páginas y pdfplumber para límites de caracteres. Las pruebas Node también verifican márgenes, superposición y marcadores al final de campos extensos.",
+  "fixtures": "tests/fixtures/pdf-layout.mjs",
+  "reproduce": "node scripts/qa-pdfs.mjs",
+  "documents": [
+    {
+      "file": "cierre.pdf",
+      "pages": 3,
+      "characters": 6713,
+      "outside_margins": [],
+      "sha256": "aea27bf4f3414cb5efaf9fab3ebe1572b1ecdd1760020a57184d94b6835bd34b"
+    },
+    {
+      "file": "cobro.pdf",
+      "pages": 3,
+      "characters": 10117,
+      "outside_margins": [],
+      "sha256": "c14965e2684e1906dfb4604d1a4f113d61aa6d5dd712e05202dcdcb67eb1ad53"
+    },
+    {
+      "file": "compra-normal.pdf",
+      "pages": 1,
+      "characters": 1069,
+      "outside_margins": [],
+      "sha256": "8d60ed7432d9f2f5ee364a1f45d0a8724181a633f5a0699886ee9bbaaa191b4e"
+    },
+    {
+      "file": "compra.pdf",
+      "pages": 5,
+      "characters": 12578,
+      "outside_margins": [],
+      "sha256": "72fc2d31f38fd8d3e2a12c34fbaadf2426a5407504903feeabe8ac5e66e1e541"
+    },
+    {
+      "file": "contador.pdf",
+      "pages": 2,
+      "characters": 6818,
+      "outside_margins": [],
+      "sha256": "bd26d159fee791817f8376b95ae96d1b9eba91892480ce7570d49d6275b7c1f2"
+    },
+    {
+      "file": "cotizacion-normal.pdf",
+      "pages": 1,
+      "characters": 1368,
+      "outside_margins": [],
+      "sha256": "5dcdff4d5a59eb736a70e5aa1f19b4df2edd1ee32f123d284a67bc7d5ac323b0"
+    },
+    {
+      "file": "cotizacion.pdf",
+      "pages": 5,
+      "characters": 11127,
+      "outside_margins": [],
+      "sha256": "4f0ac7a3cd7b92828f6ba894ce471fb16ecc8007457b59086a5638da371f199b"
+    },
+    {
+      "file": "materiales.pdf",
+      "pages": 2,
+      "characters": 8763,
+      "outside_margins": [],
+      "sha256": "e06e6762541204669029f50d625f93f4294598159956de220a9fe5f92ae38095"
+    },
+    {
+      "file": "proveedores.pdf",
+      "pages": 2,
+      "characters": 7793,
+      "outside_margins": [],
+      "sha256": "75755d8febc98ea1fa4b3d3c57faf292898594b9d240f5d043c82f2920cb06a1"
+    },
+    {
+      "file": "trabajo.pdf",
+      "pages": 8,
+      "characters": 24644,
+      "outside_margins": [],
+      "sha256": "0647ab5c891c665e9fbd7bf8339748860fa021f6a46ca84478daeeae0b52bf9f"
+    }
+  ],
+  "totalPages": 32,
+  "outsideMargins": 0,
+  "interactiveBrowserTest": false
+}
