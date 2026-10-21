@@ -170,3 +170,66 @@ test("purchase PDF includes dispatch and all supplier conditions across pages", 
   for(const text of ['Despacho neto','ULTIMA_CONDICION_V36']) assert.ok(raw.includes(Buffer.from(text,'latin1').toString('hex').toUpperCase()));
   assert.match(raw,/\/Count [2-9]\d*/);
 });
+
+const metalcon = await load('/lib/metalcon.ts');
+const allMetalconCodes = metalcon.METALCON_REFERENCES.map(ref => ref.code);
+const metalconCosts = Object.fromEntries(allMetalconCodes.map(code => [code, '12500,50']));
+const metalconRows = () => metalcon.metalconImportRows(allMetalconCodes, metalconCosts, 30, 'Proveedor propio', '2026-10-20');
+test('Metalcon references have unique internal codes, sources, unit presentations and no fabricated prices', () => {
+  assert.equal(allMetalconCodes.length,56); assert.equal(new Set(allMetalconCodes).size,56);
+  for (const ref of metalcon.METALCON_REFERENCES) {
+    assert.match(ref.code,/^MC-/); assert.ok(ref.presentation); assert.ok(ref.scope); assert.ok(metalcon.METALCON_SOURCES[ref.sourceId]);
+    assert.equal(ref.unitCost,undefined); assert.equal(ref.publishedPrice,undefined);
+    if (ref.family==='Tabiques') assert.match(ref.scope,/no portante|sin función portante/);
+  }
+  for(const template of metalcon.METALCON_TEMPLATES) for(const code of template.codes) assert.ok(allMetalconCodes.includes(code));
+});
+test('Metalcon CSV uses the existing import columns and leaves prices/date blank until the owner enters them', () => {
+  const rows=tableToImportRows(parseCsv(metalcon.metalconCsv(metalcon.METALCON_REFERENCES)));
+  assert.equal(rows.length,56); assert.ok(rows.every(row=>row.costo===''&&row.venta===''&&row.fecha===''));
+  assert.ok(previewCatalogImport(rows,[],'add').every(row=>row.action==='error'));
+  const completed=rows.map(row=>({...row,costo:'1000',venta:'1300',fecha:'2026-10-20'}));
+  assert.ok(previewCatalogImport(completed,[],'add').every(row=>row.action==='add'));
+});
+test('Metalcon prices are per presentation, preserve own dates and reject missing costs or invalid markup', () => {
+  const ref=metalcon.METALCON_REFERENCES[0], code=ref.code;
+  const row=metalcon.metalconImportRows([code,code],{[code]:'12500,50'},30,'Mi proveedor','2026-10-19');
+  assert.equal(row.length,1); assert.equal(row[0].costo,12500.5); assert.equal(row[0].venta,16250.65); assert.equal(row[0].unidad,'un'); assert.equal(row[0].fecha,'2026-10-19'); assert.match(row[0].descripcion,/no es fecha de precio/);
+  for(const price of ['', '0', '-10', 'NaN']) assert.throws(()=>metalcon.metalconImportRows([code],{[code]:price},30,'','2026-10-20'));
+  assert.throws(()=>metalcon.metalconImportRows([code],{[code]:'100'},501,'','2026-10-20'));
+});
+test('all 56 priced Metalcon references import atomically and preserve company and approved quote data', async () => {
+  const rows=metalconRows(); const preview=await ok(await imports.POST(post({action:'preview',mode:'add',rows})));
+  assert.equal(preview.summary.added,56); assert.equal(preview.summary.invalid,0);
+  await ok(await imports.POST(post({action:'commit',mode:'add',rows,expectedStates:preview.preview.map(row=>row.expectedState)})));
+  assert.equal(sqlite.prepare("SELECT count(*) n FROM catalog_items WHERE code LIKE 'MC-%'").get().n,56);
+  assert.equal(JSON.stringify(sqlite.prepare('SELECT * FROM quotes WHERE public_id=?').get(quoteId)),approvedSnapshot);
+  assert.equal(sqlite.prepare('SELECT company_json FROM app_settings').get().company_json,'{"commercial_name":"Mi empresa"}');
+});
+test('reimporting Metalcon in add mode preserves existing prices and enforces catalog permissions', async () => {
+  const rows=metalconRows().map(row=>({...row,costo:99999,venta:199998}));
+  const preview=await ok(await imports.POST(post({action:'preview',mode:'add',rows})));
+  assert.equal(preview.summary.skipped,56);
+  await ok(await imports.POST(post({action:'commit',mode:'add',rows,expectedStates:preview.preview.map(row=>row.expectedState)})));
+  assert.equal(Number(sqlite.prepare('SELECT unit_cost FROM catalog_items WHERE code=?').get(rows[0].codigo).unit_cost),12500.5);
+  state.permissions=state.permissions.filter(p=>p!=='catalog.write'); assert.equal((await imports.POST(post({action:'preview',mode:'add',rows}))).status,403); state.permissions.push('catalog.write');
+});
+const metalconCatalog=()=>sqlite.prepare("SELECT public_id publicId, code, name, description, type, unit, currency, unit_cost unitCost, unit_price unitPrice FROM catalog_items WHERE code LIKE 'MC-%'").all();
+test('Metalcon construction bundles use independent priced copies, editable quantities and duplicate protection', async () => {
+  const codes=[...metalcon.METALCON_TEMPLATES[0].codes];
+  const bundle=metalcon.metalconBundle(codes,metalconCatalog(),{[codes[0]]:8},'Mi muro según planos');
+  assert.equal(bundle.specialty,'Construcción'); assert.equal(bundle.lines[0].quantity,8);
+  await ok(await bundles.POST(post(bundle)),201);
+  const copies=applyBundle(bundle,{},[],[],'CLP'); const old=copies.lines[0].unitPrice; bundle.lines[0].unitPrice=old+1000; assert.equal(copies.lines[0].unitPrice,old);
+  assert.throws(()=>applyBundle(bundle,{},copies.lines,[],'CLP'),/ya está aplicado/);
+  assert.throws(()=>metalcon.metalconBundle(codes,metalconCatalog(),{[codes[0]]:0},'Inválido'));
+  assert.throws(()=>metalcon.metalconBundle(codes,[],{},'Sin importar'));
+});
+test('Metalcon construction bundles replay offline once and stay isolated from other accounts', async () => {
+  const codes=[...metalcon.METALCON_TEMPLATES[2].codes], bundle=metalcon.metalconBundle(codes,metalconCatalog(),{},'Cielo propio offline');
+  const sync=await load('/app/api/sync/route.ts'); const operation={id:crypto.randomUUID(),type:'bundle.save',createdAt:new Date().toISOString(),payload:bundle};
+  const send=()=>{const request=post(operation);request.headers.set('X-Solis-Offline-User','user-test');return sync.POST(request);};
+  await ok(await send()); assert.equal((await ok(await send())).replayed,true);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM catalog_bundles WHERE public_id=?').get(bundle.publicId).n,1);
+  state.owner='other@solis.test'; const other=await ok(await bundles.GET()); assert.ok(!other.bundles.some(item=>item.publicId===bundle.publicId)); state.owner='owner@solis.test';
+});

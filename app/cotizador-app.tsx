@@ -134,6 +134,7 @@ import { AccountingPanel } from "@/components/accounting-panel";
 import { OrderMaterialsPanel } from "@/components/order-materials-panel";
 import { CatalogImportPanel } from "@/components/catalog-import-panel";
 import { CatalogBundlesPanel, BundlePicker } from "@/components/catalog-bundles-panel";
+import { MetalconPanel } from "@/components/metalcon-panel";
 import { LaborPanel } from "@/components/labor-panel";
 import { SupplierComparisonPanel } from "@/components/supplier-comparison-panel";
 import { PriceReferencePanel } from "@/components/price-reference-panel";
@@ -589,6 +590,7 @@ export default function CotizadorApp() {
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [editingCatalog, setEditingCatalog] = useState<CatalogItem | null>(null);
+  const [bundlesRevision, setBundlesRevision] = useState(0);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
   const handleQuoteOpenChange = useCallback((open: boolean) => {
@@ -1295,7 +1297,7 @@ export default function CotizadorApp() {
                 />
               )}
               {section === "catalog" && (
-                <div className="space-y-5">{can("catalog.write") && <CatalogImportPanel online={online} onImported={refresh} />}<CatalogBundlesPanel catalog={data.catalogItems} canWrite={can("catalog.write")} onQueued={() => void updateQueueStatus()} /><LaborPanel canWrite={can("catalog.write")} existingCodes={data.catalogItems.map(i => i.code)} onSaved={refresh} onQueued={() => void updateQueueStatus()} /><PriceReferencePanel online={online} canImport={can("catalog.write")} existingCodes={data.catalogItems.map((item) => item.code)} onImported={refresh} /><CatalogTable items={filteredCatalog} onEdit={can("catalog.write") ? (item) => { setEditingCatalog(item); setCatalogOpen(true); } : undefined} /></div>
+                <div className="space-y-5">{can("catalog.write") && <CatalogImportPanel online={online} onImported={refresh} />}<MetalconPanel online={online} canWrite={can("catalog.write")} catalog={data.catalogItems} onImported={refresh} onQueued={() => void updateQueueStatus()} onBundleSaved={() => setBundlesRevision(value => value + 1)} /><CatalogBundlesPanel refreshKey={bundlesRevision} catalog={data.catalogItems} canWrite={can("catalog.write")} onQueued={() => void updateQueueStatus()} /><LaborPanel canWrite={can("catalog.write")} existingCodes={data.catalogItems.map(i => i.code)} onSaved={refresh} onQueued={() => void updateQueueStatus()} /><PriceReferencePanel online={online} canImport={can("catalog.write")} existingCodes={data.catalogItems.map((item) => item.code)} onImported={refresh} /><CatalogTable items={filteredCatalog} onEdit={can("catalog.write") ? (item) => { setEditingCatalog(item); setCatalogOpen(true); } : undefined} /></div>
               )}
               {section === "orders" && (
                 <OrdersTable
