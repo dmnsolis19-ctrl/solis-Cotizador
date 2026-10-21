@@ -102,6 +102,7 @@ export function supplierCsv(rows: SupplierMaterial[]) {
 
 export const MATERIAL_TEMPLATES = {
   solar: { name: "Fotovoltaica", titles: ["Paneles e inversor", "Materiales de corriente continua", "Materiales de corriente alterna", "Estructura y puesta a tierra"] },
+  metalcon: { name: "Construcción en Metalcon", titles: ["Perfilería estructural según planos", "Anclajes y arriostramientos", "Tabiques y cielos no portantes", "Placas y aislación"] },
   automation: { name: "Automatización industrial", titles: ["PLC, HMI y comunicaciones", "Tablero de control", "Instrumentación y actuadores", "Canalizaciones y cableado"] },
   hvac: { name: "Aire acondicionado", titles: ["Equipos de climatización", "Tuberías y aislamiento", "Drenaje y accesorios", "Alimentación eléctrica"] },
   electrical: { name: "Electricidad domiciliaria", titles: ["Tablero y protecciones", "Conductores y canalizaciones", "Enchufes e iluminación", "Puesta a tierra"] },

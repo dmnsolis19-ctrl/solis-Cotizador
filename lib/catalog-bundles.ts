@@ -7,7 +7,7 @@ export const bundleLineSchema = z.object({
 });
 export const bundleSchema = z.object({
   publicId: z.string().uuid(), expectedUpdatedAt: z.string().default(""), name: z.string().trim().min(2).max(180),
-  specialty: z.enum(["Automatización", "Climatización", "Electricidad", "Fotovoltaica"]), currency: z.enum(["CLP", "USD", "EUR", "UF"]),
+  specialty: z.enum(["Automatización", "Climatización", "Electricidad", "Fotovoltaica", "Construcción"]), currency: z.enum(["CLP", "USD", "EUR", "UF"]),
   lines: z.array(bundleLineSchema).min(1).max(100),
 }).superRefine((bundle, ctx) => { if (new Set(bundle.lines.map(l => l.catalogItemPublicId)).size !== bundle.lines.length) ctx.addIssue({ code: "custom", message: "Use una sola fila por código y ajuste su cantidad." }); });
 export type Bundle = z.infer<typeof bundleSchema> & { updatedAt?: string };

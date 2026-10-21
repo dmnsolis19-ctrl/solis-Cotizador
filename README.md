@@ -2,7 +2,7 @@
 
 Aplicación empresarial para cotizaciones, órdenes de trabajo, ejecución en terreno, inventario, compras, cobros y rentabilidad. Se ejecuta sobre Cloudflare Workers, usa D1 para datos estructurados y R2 para documentos y evidencias.
 
-La entrega actual es **v3.6.3**. Corrige el bloqueo de instalación en Cloudflare por un metadato incoherente de `tailwind-merge` en el lockfile. Incluye las correcciones previas del formulario, PDF y campos numéricos. Consulte [la guía de actualización](docs/ACTUALIZACION_V3_6_3.md) y ejecute `npm run check:lockfile` para comprobar los metadatos de dependencias.
+La entrega actual es **v3.7.0**. Agrega una biblioteca de 56 referencias de Metalcon y complementos, con precios propios, vista previa de importación y conjuntos de Construcción. Conserva las correcciones de instalación, formulario, PDF y campos numéricos. Consulte [la guía de actualización y uso](docs/ACTUALIZACION_V3_7_0.md).
 
 Incluye PDF comercial con formato blanco y azul, logo configurable, 196 referencias eléctricas de Chile con fuente y fecha, edición de precios propios, materiales de órdenes en PDF/CSV, expediente de facturación para el contador y copias de lectura/cola offline por usuario. Las listas internas siguen generando una partida global por título comercial. v3.6 agrega importación Excel/CSV con vista previa, conjuntos, nueve referencias públicas de servicios/mano de obra, cálculo propio por cuadrilla y comparador de proveedores con preparación de compra. Requiere la migración aditiva `0015_little_war_machine.sql` sobre una instalación v3.5 completa. No se publica ni despliega al descomprimir este proyecto.
 
