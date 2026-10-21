@@ -591,6 +591,10 @@ export default function CotizadorApp() {
   const [editingCatalog, setEditingCatalog] = useState<CatalogItem | null>(null);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
+  const handleQuoteOpenChange = useCallback((open: boolean) => {
+    setQuoteOpen(open);
+    if (!open) setEditingQuote(null);
+  }, []);
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<WorkOrder | null>(null);
   const [usersData, setUsersData] = useState<AppUser[]>([]);
@@ -1338,14 +1342,11 @@ export default function CotizadorApp() {
           onQueued={catalogQueued}
         />
       )}
-      {can("quotes.write") && (
+      {quoteOpen && can("quotes.write") && (
         <QuoteDialog
-          key={`quote-${editingQuote?.publicId || "new"}-${String(data.economicSettings.discount_percent ?? 0)}`}
+          key={`quote-${data.session.user.publicId}-${editingQuote?.publicId || "new"}`}
           open={quoteOpen}
-          onOpenChange={(open) => {
-            setQuoteOpen(open);
-            if (!open) setEditingQuote(null);
-          }}
+          onOpenChange={handleQuoteOpenChange}
           data={data}
           quote={editingQuote}
           online={online}
@@ -2555,6 +2556,7 @@ function QuoteDialog({
   onQueued: () => void;
 }) {
   const settings = data.economicSettings;
+  const quotePublicId = quote?.publicId || "";
   const [clientId, setClientId] = useState("");
   const [project, setProject] = useState("");
   const [issueDate, setIssueDate] = useState(today());
@@ -2590,36 +2592,14 @@ function QuoteDialog({
   try { groupLines = materialLines(materialGroups, economic); } catch (error) { materialCalculationError = error instanceof Error ? error.message : "Revise los materiales."; }
   const calculated = calculateQuote([...lines, ...groupLines], economic);
 
+  // A new dialog mounts for every opening. Background refreshes update the
+  // library around it without replacing the user's in-progress form state.
   useEffect(() => {
-    if (!open) return;
+    if (!open || !quotePublicId) return;
     let cancelled = false;
     void (async () => {
-      setLoadingDetails(Boolean(quote));
-      if (!quote) {
-        await Promise.resolve();
-        if (cancelled) return;
-        setClientId("");
-        setProject("");
-        setIssueDate(today());
-        setQuoteCurrency("CLP");
-        setLines([]);
-        setMaterialGroups([]);
-        setDiscount(numberValue(settings.discount_percent, 0));
-        setTaxPercent(19);
-        setOverheadPercent(numberValue(settings.overhead_percent, 10));
-        setContingencyPercent(numberValue(settings.contingency_percent, 5));
-        setTargetMarginPercent(numberValue(settings.target_margin_percent, 25));
-        setRoundingMultiple(numberValue(settings.rounding_multiple, 1000));
-        setValidityDays(20);
-        setPaymentTerms("50% anticipo / 50% contra entrega");
-        setDeliveryTerms("Por definir");
-        setNotes("");
-        setTechnicalValidation(""); setScopeExclusions("");
-        setLoadingDetails(false);
-        return;
-      }
       try {
-        const detail = await cachedApi<QuoteDetail>(`/api/quotes?publicId=${encodeURIComponent(quote.publicId)}`);
+        const detail = await cachedApi<QuoteDetail>(`/api/quotes?publicId=${encodeURIComponent(quotePublicId)}`);
         if (cancelled) return;
         setClientId(detail.quote.clientPublicId || "");
         setProject(detail.quote.project);
@@ -2648,7 +2628,7 @@ function QuoteDialog({
       }
     })();
     return () => { cancelled = true; };
-  }, [open, quote, settings, onOpenChange]);
+  }, [open, quotePublicId, onOpenChange]);
   const addCatalog = () => {
     const item = data.catalogItems.find(
       (entry) => entry.publicId === catalogId,
