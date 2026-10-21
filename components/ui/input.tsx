@@ -3,8 +3,9 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+  const Control = type === "number" ? NumberInput : "input"
   return (
-    <input
+    <Control
       type={type}
       data-slot="input"
       className={cn(
@@ -16,6 +17,38 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
       {...props}
     />
   )
+}
+
+// Keep the text being edited while callers store numbers (Number("") is 0).
+// Native number validation, refs and change events still belong to the input.
+function NumberInput({ value, onChange, onFocus, onClick, onBlur, ...props }: React.ComponentProps<"input">) {
+  const [draft, setDraft] = React.useState<string | null>(null)
+  const controlled = value !== undefined
+  const matches = draft !== null && (String(value ?? "") === draft ||
+    (Number.isFinite(Number(value)) && Number(draft) === Number(value)))
+
+  React.useEffect(() => {
+    if (!matches) setDraft(null)
+  }, [value, matches])
+
+  const selectZero = (input: HTMLInputElement) => {
+    if (!props.readOnly && input.value !== "" && Number(input.value) === 0) input.select()
+  }
+
+  return <input {...props} type="number" inputMode={props.inputMode ?? "decimal"}
+    value={controlled && matches ? draft! : value}
+    onFocus={event => { onFocus?.(event); if (!event.defaultPrevented) selectZero(event.currentTarget) }}
+    onClick={event => { onClick?.(event); if (!event.defaultPrevented) selectZero(event.currentTarget) }}
+    onChange={event => {
+      // Also handle keyboards that leave the initial zero in front of a digit.
+      const current = event.currentTarget.value
+      const text = current.replace(/^(-?)0+(?=\d)/, "$1")
+      if (text !== current) event.currentTarget.value = text
+      if (controlled) setDraft(text)
+      onChange?.(event)
+    }}
+    onBlur={event => { setDraft(null); onBlur?.(event) }}
+  />
 }
 
 export { Input }
