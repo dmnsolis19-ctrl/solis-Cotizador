@@ -7,6 +7,8 @@ if [[ "${SITES_ENV_READY:-}" != "1" ]]; then
   exec "${script_dir}/sites-env.sh" -- "$0" "$@"
 fi
 
+node "${SITES_PROJECT_ROOT}/scripts/verify-dependency-lock.mjs"
+
 command -v timeout || {
   echo "build-verified.sh requires GNU timeout." >&2
   exit 69

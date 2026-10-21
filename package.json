@@ -1,6 +1,6 @@
 {
   "name": "solis-cotizador-pwa",
-  "version": "3.6.2",
+  "version": "3.6.3",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -14,8 +14,9 @@
     "test": "npm run build && node --test --test-concurrency=1 tests/*.test.mjs",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "bash scripts/sites-env.sh -- tsc --noEmit",
-    "check": "npm run typecheck && npm run lint && npm test",
-    "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
+    "check": "npm run check:lockfile && npm run typecheck && npm run lint && npm test",
+    "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
+    "check:lockfile": "node scripts/verify-dependency-lock.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
