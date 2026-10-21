@@ -1,0 +1,622 @@
+{
+  "checkedAt": "2026-10-20",
+  "sources": {
+    "c-cintac": {
+      "label": "Cintac · tablas de perfiles C",
+      "url": "https://www.cintac.cl/wp-content/uploads/2023/08/Manual-de-Diseno-Metalcon.pdf",
+      "edition": "Manual de diseño, URL publicada en 2023; tablas indexadas"
+    },
+    "u-cintac": {
+      "label": "Cintac · tablas de perfiles U",
+      "url": "https://www.cintac.cl/wp-content/uploads/2020/09/Manual-de-Disen%CC%83o-Metalcon-2020.pdf",
+      "edition": "Manual de diseño 2020; tablas indexadas"
+    },
+    "tabiques": {
+      "label": "Cintac · catálogo general",
+      "url": "https://www.cintac.cl/wp-content/uploads/2025/04/catalogo-general-2025.pdf",
+      "edition": "Catálogo 2025; tablas indexadas"
+    },
+    "cielos": {
+      "label": "Cintac · Metalcon Cielos",
+      "url": "https://www.cintac.cl/wp-content/uploads/2026/08/Metalcon/metalcon%20cielos%202026%20web.pdf",
+      "edition": "Julio 2026, pp. 5–9 y 14"
+    },
+    "muros": {
+      "label": "Cintac · muros estructurales",
+      "url": "https://www.cintac.cl/muros-estructurales/",
+      "edition": "Página del fabricante"
+    },
+    "volcan-st10": {
+      "label": "Volcán · placa ST 10",
+      "url": "https://tienda.volcan.cl/products/5000313-volcanita-st-br-10-x-12-x-24",
+      "edition": "Ficha del fabricante"
+    },
+    "volcan-st125": {
+      "label": "Volcán · placa ST 12,5",
+      "url": "https://tienda.volcan.cl/products/5000534-volcanita-st-br-125-x-12-x-24",
+      "edition": "Ficha del fabricante"
+    },
+    "volcan-rh": {
+      "label": "Volcán · placa RH 12,5",
+      "url": "https://tienda.volcan.cl/products/5000598-volcanita-rh-br-125-x-12-x-24",
+      "edition": "Ficha del fabricante"
+    },
+    "volcan-rf": {
+      "label": "Volcán · placa RF 12,5",
+      "url": "https://tienda.volcan.cl/products/5000644-volcanita-rf-br-125-x-12-x-24",
+      "edition": "Ficha del fabricante"
+    },
+    "osb": {
+      "label": "LP Chile · OSB Protec",
+      "url": "https://lpchile.cl/producto/lp-osb-apa-protec/",
+      "edition": "Ficha del fabricante"
+    },
+    "propio": {
+      "label": "Alcance de presupuesto SOLIS",
+      "url": "",
+      "edition": "Partida genérica editable; no corresponde a una tarifa ni SKU de fabricante"
+    }
+  },
+  "references": [
+    {
+      "code": "MC-E-C90P085-2500",
+      "name": "Perfil C 90 × 38 × 12 × 0,85 mm · 2,5 m · perforado",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 2,5 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-E-C90P085-3000",
+      "name": "Perfil C 90 × 38 × 12 × 0,85 mm · 3 m · perforado",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 3 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-E-C90P085-6000",
+      "name": "Perfil C 90 × 38 × 12 × 0,85 mm · 6 m · perforado",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-E-C90P100-6000",
+      "name": "Perfil C 90 × 38 × 12 × 1,0 mm · 6 m · perforado",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-E-C90S085-6000",
+      "name": "Perfil C 90 × 38 × 12 × 0,85 mm · 6 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-E-C100P085-6000",
+      "name": "Perfil C 100 × 40 × 12 × 0,85 mm · 6 m · perforado",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-E-C150S085-6000",
+      "name": "Perfil C 150 × 40 × 12 × 0,85 mm · 6 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-E-C150S100-6000",
+      "name": "Perfil C 150 × 40 × 12 × 1,0 mm · 6 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-E-C150S160-6000",
+      "name": "Perfil C 150 × 40 × 12 × 1,6 mm · 6 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-E-C200S160-6000",
+      "name": "Perfil C 200 × 40 × 12 × 1,6 mm · 6 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-E-U62-085-3000",
+      "name": "Canal U 62 × 25 × 0,85 mm · 3 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 3 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "u-cintac"
+    },
+    {
+      "code": "MC-E-U62-085-6000",
+      "name": "Canal U 62 × 25 × 0,85 mm · 6 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "u-cintac"
+    },
+    {
+      "code": "MC-E-U92-085-3000",
+      "name": "Canal U 92 × 30 × 0,85 mm · 3 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 3 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "u-cintac"
+    },
+    {
+      "code": "MC-E-U92-085-6000",
+      "name": "Canal U 92 × 30 × 0,85 mm · 6 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "u-cintac"
+    },
+    {
+      "code": "MC-E-U92-100-6000",
+      "name": "Canal U 92 × 30 × 1,0 mm · 6 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "u-cintac"
+    },
+    {
+      "code": "MC-E-U103-085-6000",
+      "name": "Canal U 103 × 30 × 0,85 mm · 6 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "u-cintac"
+    },
+    {
+      "code": "MC-E-OMEGA085-3000",
+      "name": "Perfil omega 38 × 35 × 15 × 0,85 mm · 3 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 3 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-E-OMEGA085-6000",
+      "name": "Perfil omega 38 × 35 × 15 × 0,85 mm · 6 m",
+      "family": "Estructural",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Uso portante solo según planos y cálculo del proyecto. Confirmar sección, recubrimiento, conexiones y disponibilidad con el fabricante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-T-C60-2400",
+      "name": "Montante de tabique 60 × 38 × 6 × 0,5 mm · 2,4 m",
+      "family": "Tabiques",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 2,4 m",
+      "scope": "División interior no portante. No sustituir perfiles estructurales. Confirmar compatibilidad de canal y montante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-T-C60-3000",
+      "name": "Montante de tabique 60 × 38 × 6 × 0,5 mm · 3 m",
+      "family": "Tabiques",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 3 m",
+      "scope": "División interior no portante. No sustituir perfiles estructurales. Confirmar compatibilidad de canal y montante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-T-U61-2400",
+      "name": "Canal de tabique 61 × 20 × 0,5 mm · 2,4 m",
+      "family": "Tabiques",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 2,4 m",
+      "scope": "División interior no portante. No sustituir perfiles estructurales. Confirmar compatibilidad de canal y montante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-T-U61-3000",
+      "name": "Canal de tabique 61 × 20 × 0,5 mm · 3 m",
+      "family": "Tabiques",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 3 m",
+      "scope": "División interior no portante. No sustituir perfiles estructurales. Confirmar compatibilidad de canal y montante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-T-C38-2400",
+      "name": "Montante de tabique 38 × 38 × 5 × 0,5 mm · 2,4 m",
+      "family": "Tabiques",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 2,4 m",
+      "scope": "División interior no portante. No sustituir perfiles estructurales. Confirmar compatibilidad de canal y montante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-T-C38-3000",
+      "name": "Montante de tabique 38 × 38 × 5 × 0,5 mm · 3 m",
+      "family": "Tabiques",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 3 m",
+      "scope": "División interior no portante. No sustituir perfiles estructurales. Confirmar compatibilidad de canal y montante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-T-U39-2400",
+      "name": "Canal de tabique 39 × 20 × 0,5 mm · 2,4 m",
+      "family": "Tabiques",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 2,4 m",
+      "scope": "División interior no portante. No sustituir perfiles estructurales. Confirmar compatibilidad de canal y montante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-T-U39-3000",
+      "name": "Canal de tabique 39 × 20 × 0,5 mm · 3 m",
+      "family": "Tabiques",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 3 m",
+      "scope": "División interior no portante. No sustituir perfiles estructurales. Confirmar compatibilidad de canal y montante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-T-ESQ-30-2400",
+      "name": "Esquinero perforado 30 × 30 mm · 2,4 m",
+      "family": "Tabiques",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 pieza de 2,4 m",
+      "scope": "Protección de esquina de revestimiento; espesor por especificar, sin función portante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-T-ESQ-25-3000",
+      "name": "Esquinero perforado 25 × 25 mm · 3 m",
+      "family": "Tabiques",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 pieza de 3 m",
+      "scope": "Protección de esquina de revestimiento; espesor por especificar, sin función portante.",
+      "sourceId": "tabiques"
+    },
+    {
+      "code": "MC-C-40R-3000",
+      "name": "Portante 40R 40 × 18 × 10 × 0,5 mm · 3 m",
+      "family": "Cielos",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 3 m",
+      "scope": "Soporte de revestimiento de cielo. Modulación y suspensiones según sistema y proyecto.",
+      "sourceId": "cielos"
+    },
+    {
+      "code": "MC-C-40R-6000",
+      "name": "Portante 40R 40 × 18 × 10 × 0,5 mm · 6 m",
+      "family": "Cielos",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 6 m",
+      "scope": "Soporte de revestimiento de cielo. Modulación y suspensiones según sistema y proyecto.",
+      "sourceId": "cielos"
+    },
+    {
+      "code": "MC-C-AT-3000",
+      "name": "Perfil AT para cielo · barra de 3 m",
+      "family": "Cielos",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 barra de 3 m",
+      "scope": "Sección nominal 20 × 25 × 4 mm. El manual denomina 0,5 mm e indica 0,42 mm en la tabla: confirmar espesor del suministro antes de comprar.",
+      "sourceId": "cielos"
+    },
+    {
+      "code": "MC-C-TI",
+      "name": "Conector TI 150 × 66 × 0,85 mm",
+      "family": "Cielos",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 conector individual",
+      "scope": "Precio por conector individual; no por caja de 10 o 100. Fijación y nivelación según detalle del sistema.",
+      "sourceId": "cielos"
+    },
+    {
+      "code": "MC-F-LENTEJA8-12",
+      "name": "Tornillo lenteja PB #8 × 1/2 pulgada",
+      "family": "Fijaciones",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 tornillo individual",
+      "scope": "Para las uniones indicadas en el sistema de cielo. Confirmar punta y capacidad de perforación.",
+      "sourceId": "cielos"
+    },
+    {
+      "code": "MC-F-FRAMER7-716",
+      "name": "Tornillo Framer PF #7 × 7/16 pulgada",
+      "family": "Fijaciones",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 tornillo individual",
+      "scope": "Punta fina; confirmar compatibilidad con los espesores que se van a unir.",
+      "sourceId": "cielos"
+    },
+    {
+      "code": "MC-F-YESO6-114",
+      "name": "Tornillo para yeso-cartón #6 × 1 1/4 pulgada",
+      "family": "Fijaciones",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 tornillo individual",
+      "scope": "Fijación de placa; confirmar punta, penetración y especificación de la placa.",
+      "sourceId": "cielos"
+    },
+    {
+      "code": "MC-F-HEX12-34",
+      "name": "Tornillo hexagonal PB #12 × 3/4 pulgada",
+      "family": "Fijaciones",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 tornillo individual",
+      "scope": "Uso según detalle de conexión de cielo colgado; no asigna capacidad resistente a la unión.",
+      "sourceId": "cielos"
+    },
+    {
+      "code": "MC-F-YESO6-1",
+      "name": "Tornillo trompeta #6 × 1 pulgada",
+      "family": "Fijaciones",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 tornillo individual",
+      "scope": "Fijación según el detalle del sistema, sin intercambiar con conexiones estructurales.",
+      "sourceId": "cielos"
+    },
+    {
+      "code": "MC-F-LENTEJA8-58",
+      "name": "Tornillo autoperforante lenteja #8 × 5/8 pulgada",
+      "family": "Fijaciones",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 tornillo individual",
+      "scope": "Conexión metal-metal cuando lo especifique el proyecto. Cantidad y separación según cálculo y detalle.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-F-MADERA8-1",
+      "name": "Tornillo trompeta #8 × 1 pulgada para placa de madera",
+      "family": "Fijaciones",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 tornillo individual",
+      "scope": "Unión madera-metal cuando lo especifique el proyecto. No define separación ni capacidad.",
+      "sourceId": "c-cintac"
+    },
+    {
+      "code": "MC-A-ANCLAJE",
+      "name": "Anclaje a fundación por especificar",
+      "family": "Anclajes y arriostres",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 anclaje completo",
+      "scope": "Definir tipo, diámetro, longitud, empotramiento, golillas y capacidad según cálculo; no incluye un anclaje universal.",
+      "sourceId": "muros"
+    },
+    {
+      "code": "MC-A-FLEJE",
+      "name": "Fleje de arriostramiento por especificar",
+      "family": "Anclajes y arriostres",
+      "type": "Material",
+      "unit": "m",
+      "presentation": "1 metro lineal",
+      "scope": "Definir ancho, espesor, material, terminales y conexiones según el plano estructural.",
+      "sourceId": "muros"
+    },
+    {
+      "code": "MC-P-ST10",
+      "name": "Placa yeso-cartón ST 10 mm · 1,2 × 2,4 m",
+      "family": "Placas y aislación",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 plancha (2,88 m2)",
+      "scope": "Seleccionar placa y sistema completo según exigencias del recinto; la placa aislada no certifica resistencia al fuego del conjunto.",
+      "sourceId": "volcan-st10"
+    },
+    {
+      "code": "MC-P-ST125",
+      "name": "Placa yeso-cartón ST 12,5 mm · 1,2 × 2,4 m",
+      "family": "Placas y aislación",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 plancha (2,88 m2)",
+      "scope": "Seleccionar placa y sistema completo según exigencias del recinto; la placa aislada no certifica resistencia al fuego del conjunto.",
+      "sourceId": "volcan-st125"
+    },
+    {
+      "code": "MC-P-RH125",
+      "name": "Placa yeso-cartón RH 12,5 mm · 1,2 × 2,4 m",
+      "family": "Placas y aislación",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 plancha (2,88 m2)",
+      "scope": "Seleccionar placa y sistema completo según exigencias del recinto; la placa aislada no certifica resistencia al fuego del conjunto.",
+      "sourceId": "volcan-rh"
+    },
+    {
+      "code": "MC-P-RF125",
+      "name": "Placa yeso-cartón RF 12,5 mm · 1,2 × 2,4 m",
+      "family": "Placas y aislación",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 plancha (2,88 m2)",
+      "scope": "Seleccionar placa y sistema completo según exigencias del recinto; la placa aislada no certifica resistencia al fuego del conjunto.",
+      "sourceId": "volcan-rf"
+    },
+    {
+      "code": "MC-P-OSB095",
+      "name": "Tablero OSB estructural 9,5 mm · 1,22 × 2,44 m",
+      "family": "Placas y aislación",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 tablero (2,9768 m2)",
+      "scope": "Espesor, orientación, apoyos y fijaciones definidos por el proyecto; no sustituye el cálculo de diafragmas.",
+      "sourceId": "osb"
+    },
+    {
+      "code": "MC-P-OSB111",
+      "name": "Tablero OSB estructural 11,1 mm · 1,22 × 2,44 m",
+      "family": "Placas y aislación",
+      "type": "Material",
+      "unit": "un",
+      "presentation": "1 tablero (2,9768 m2)",
+      "scope": "Espesor, orientación, apoyos y fijaciones definidos por el proyecto; no sustituye el cálculo de diafragmas.",
+      "sourceId": "osb"
+    },
+    {
+      "code": "MC-G-AISLACION",
+      "name": "Aislación térmica/acústica por especificar",
+      "family": "Placas y aislación",
+      "type": "Material",
+      "unit": "m2",
+      "presentation": "1 m2 instalado de material",
+      "scope": "Definir producto, espesor y desempeño exigido; materiales y mano de obra separados.",
+      "sourceId": "propio"
+    },
+    {
+      "code": "MC-G-MEMBRANA",
+      "name": "Membrana hidrófuga por especificar",
+      "family": "Placas y aislación",
+      "type": "Material",
+      "unit": "m2",
+      "presentation": "1 m2 de material",
+      "scope": "Definir membrana, ubicación, traslapos y sellos según solución de envolvente.",
+      "sourceId": "propio"
+    },
+    {
+      "code": "MC-G-CINTA",
+      "name": "Cinta para juntas de placas por especificar",
+      "family": "Terminaciones",
+      "type": "Material",
+      "unit": "m",
+      "presentation": "1 metro lineal",
+      "scope": "Definir cinta compatible con la placa y el compuesto de juntas.",
+      "sourceId": "propio"
+    },
+    {
+      "code": "MC-G-PASTA",
+      "name": "Compuesto para juntas de placas por especificar",
+      "family": "Terminaciones",
+      "type": "Material",
+      "unit": "kg",
+      "presentation": "1 kilogramo",
+      "scope": "Seleccionar producto y rendimiento del fabricante; no incluye agua ni mano de obra.",
+      "sourceId": "propio"
+    },
+    {
+      "code": "MC-MO-ESTRUCTURA",
+      "name": "Montaje de estructura portante según planos",
+      "family": "Mano de obra",
+      "type": "Mano de obra",
+      "unit": "h",
+      "presentation": "1 h de mano de obra",
+      "scope": "Hora de trabajo. Solo mano de obra; materiales, cálculo, traslados y equipos se presupuestan aparte.",
+      "sourceId": "propio"
+    },
+    {
+      "code": "MC-MO-TABIQUE",
+      "name": "Montaje de perfilería de tabique no portante",
+      "family": "Mano de obra",
+      "type": "Mano de obra",
+      "unit": "m2",
+      "presentation": "1 m2 de mano de obra",
+      "scope": "Solo mano de obra de perfilería. Área y descuentos por vanos acordados en el presupuesto; no incluye placas ni materiales.",
+      "sourceId": "propio"
+    },
+    {
+      "code": "MC-MO-CIELO",
+      "name": "Montaje de perfilería de cielo",
+      "family": "Mano de obra",
+      "type": "Mano de obra",
+      "unit": "m2",
+      "presentation": "1 m2 de mano de obra",
+      "scope": "Solo mano de obra de entramado y nivelación según proyecto. No incluye placas, materiales, andamios ni equipos especiales.",
+      "sourceId": "propio"
+    },
+    {
+      "code": "MC-MO-PLACAS",
+      "name": "Instalación de placas por cara",
+      "family": "Mano de obra",
+      "type": "Mano de obra",
+      "unit": "m2",
+      "presentation": "1 m2 de mano de obra",
+      "scope": "Mano de obra por cara revestida. No incluye materiales, perfilería, juntas ni pintura.",
+      "sourceId": "propio"
+    },
+    {
+      "code": "MC-MO-JUNTAS",
+      "name": "Tratamiento de juntas por cara",
+      "family": "Mano de obra",
+      "type": "Mano de obra",
+      "unit": "m2",
+      "presentation": "1 m2 de mano de obra",
+      "scope": "Mano de obra por cara según terminación acordada. No incluye pasta, cinta, pintura ni perfilería.",
+      "sourceId": "propio"
+    }
+  ]
+}
