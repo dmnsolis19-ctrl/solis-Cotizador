@@ -1,0 +1,37 @@
+{
+  "version": "3.6.3",
+  "date": "2026-10-20",
+  "cause": {
+    "package": "tailwind-merge",
+    "declared": "3.6.0",
+    "previousLocked": "3.6.1",
+    "tarball": "tailwind-merge-3.6.0.tgz",
+    "correctedLocked": "3.6.0"
+  },
+  "referenceGithubBlobs": {
+    "package.json": "84416e75b7e1515f6ed237a480c95924836c7e46",
+    "package-lock.json": "631acf94cc42b97581e1531c145303bbb5f7fc98"
+  },
+  "lockfileCheck": {
+    "directDependencies": 42,
+    "lockedEntries": 887,
+    "exitCode": 0
+  },
+  "npmCiDryRun": {
+    "command": "npm ci --dry-run --offline --ignore-scripts --no-audit --no-fund",
+    "npmVersion": "11.9.0",
+    "nodeVersion": "24.19.0",
+    "exitCode": 0,
+    "cleanDirectoryWithoutNodeModules": true,
+    "note": "Simulación nativa de resolución y coherencia; no equivale a descargar, instalar y ejecutar scripts de todos los paquetes."
+  },
+  "tarballIntegrity": {
+    "package": "tailwind-merge",
+    "version": "3.6.0",
+    "integrityVerifiedAgainstCachedTarball": true
+  },
+  "completeCleanInstall": {
+    "verified": false,
+    "reason": "El acceso al registro está restringido y faltan versiones exactas en caché; se conservan los límites descritos en docs/VALIDACION_V3_6.md."
+  }
+}
