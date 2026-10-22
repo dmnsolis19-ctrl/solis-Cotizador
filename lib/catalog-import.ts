@@ -54,6 +54,12 @@ export function csvCell(value: unknown) {
   let text = String(value ?? ""); if (/^[\s]*[=+\-@\t\r]/.test(text)) text = `'${text}`;
   return `"${text.replaceAll('"', '""')}"`;
 }
+export const importActionLabel = { add: "Agregar", update: "Actualizar", skip: "Omitir", error: "Inválida" } as const;
+export function importPreviewCsv(preview: ImportPreview[]) {
+  const rows: unknown[][] = [["fila", "codigo", "resultado", "nombre", "costo_neto", "venta_neta", "moneda", "observaciones"]];
+  for (const row of preview) rows.push([row.row, row.code, importActionLabel[row.action], row.input?.nombre ?? "", row.netCost ?? "", row.netPrice ?? "", row.input?.moneda ?? "", row.errors.join(" · ")]);
+  return "\uFEFF" + rows.map(row => row.map(csvCell).join(";")).join("\r\n");
+}
 export const importTemplateRows = [IMPORT_COLUMNS, ["MAT-EJEMPLO", "Material", "Electricidad", "Material de ejemplo: reemplace esta fila", "Especifique el alcance", "un", "0", "0", "CLP", "neto", "19", "", "", "2026-10-20"]];
 export function importTemplateCsv() { return "\uFEFF" + importTemplateRows.map(row => row.map(csvCell).join(";")).join("\r\n"); }
 
