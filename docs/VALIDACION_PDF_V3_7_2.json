@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-22",
+  "files": [
+    {
+      "file": "Cotizacion_formato_profesional.pdf",
+      "pages": 1,
+      "characters": 1314,
+      "withinPage": true,
+      "totalAndSignaturesPresent": true,
+      "visualInspection": "checked"
+    },
+    {
+      "file": "cotizacion.pdf",
+      "pages": 4,
+      "characters": 10806,
+      "withinPage": true,
+      "totalAndSignaturesPresent": true,
+      "visualInspection": "checked"
+    }
+  ],
+  "tests": {
+    "passed": 121,
+    "failed": 0,
+    "skipped": 0
+  },
+  "typecheck": "passed",
+  "lint": "passed",
+  "build": "passed with documented cached dependencies",
+  "productionDeployment": false
+}
