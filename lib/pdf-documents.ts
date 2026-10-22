@@ -287,6 +287,7 @@ function drawFooter(pdf: PdfDocument, page: PdfPage, company: CompanyData, pageN
 }
 
 type PdfCell = { value: unknown; width: number; bold?: boolean; fill?: Color; align?: "left" | "right"; size?: number; color?: Color };
+type PdfRowStyle = { x?: number; horizontalRules?: boolean };
 
 // All blocks measure their actual wrapped text and split at page boundaries.
 // y is the top of the next block; no fixed-height box discards text.
@@ -324,7 +325,7 @@ class PdfLayout {
       this.y -= size + 4;
     }
   }
-  row(cells: PdfCell[], boxed = true, size = 8, padding = 6, continuation?: () => void) {
+  row(cells: PdfCell[], boxed = true, size = 8, padding = 6, continuation?: () => void, style: PdfRowStyle = {}) {
     const lineHeight = Math.max(size, ...cells.map(cell => cell.size || size)) + 3;
     const lines = cells.map(cell => wrapText(cell.value, cell.width - padding * 2, cell.size || size, cell.bold));
     const length = Math.max(...lines.map(cell => cell.length));
@@ -333,12 +334,15 @@ class PdfLayout {
       if (this.y - lineHeight - padding * 2 < this.bottom) { this.next(); continuation?.(); }
       const count = Math.min(length - offset, Math.max(1, Math.floor((this.y - this.bottom - padding * 2) / lineHeight)));
       const height = count * lineHeight + padding * 2;
-      let x = MARGIN;
+      const left = style.x ?? MARGIN;
+      let x = left;
       cells.forEach((cell, i) => {
         if (boxed) this.pdf.rect(this.page, x, this.y - height, cell.width, height, cell.fill || WHITE, [0.78, 0.83, 0.89]);
+        else if (cell.fill) this.pdf.rect(this.page, x, this.y - height, cell.width, height, cell.fill);
         lines[i].slice(offset, offset + count).forEach((line, index) => this.pdf.text(this.page, line, cell.align === "right" ? x + cell.width - padding : x + padding, this.y - padding - (cell.size || size) - index * lineHeight, cell.size || size, cell.bold, cell.color || NAVY, cell.align));
         x += cell.width;
       });
+      if (style.horizontalRules) this.pdf.line(this.page, left, this.y - height, x, this.y - height, [0.86, 0.88, 0.91], 0.5);
       this.y -= height;
       offset += count;
       if (offset < length) { this.next(); continuation?.(); }
@@ -382,43 +386,60 @@ export function buildQuotePdf(input: { company: CompanyData; client?: ClientPdfD
   l.paragraph(quote.project, 11, true, BLUE); l.gap();
   const metadata = [["Cliente", client.name || quote.clientName, "Fecha", quote.issueDate.split("-").reverse().join("/")], ["RUT", client.taxId || "-", "Cotización", quote.number], ["Contacto", client.contactName || client.email || "-", "Validez", `${payload.validityDays ?? payload.validity_days ?? 20} días corridos`]];
   for (const [a, b, c, d] of metadata) l.row([
-    { value: a, width: 56, bold: true, fill: PALE_BLUE }, { value: b, width: 241, bold: true },
-    { value: c, width: 63, bold: true, fill: PALE_BLUE }, { value: d, width: l.width - 360, bold: true },
-  ]);
-  l.gap(20);
+    { value: a, width: 56, bold: true, color: SLATE }, { value: b, width: 241 },
+    { value: c, width: 63, bold: true, color: SLATE }, { value: d, width: l.width - 360 },
+  ], false, 8, 6, undefined, { horizontalRules: true });
+  l.gap(14);
   const widths = [26, 210, 40, 40, 95, l.width - 411];
   const tableHeader = () => {
     l.section("OFERTA ECONÓMICA");
-    l.row(["Ítem", "Descripción", "Cant.", "Unidad", "P. unitario", "Total neto"].map((value, i) => ({ value, width: widths[i], bold: true, fill: BLUE, color: WHITE })), true, 7, 4);
+    l.row(["Ítem", "Descripción", "Cant.", "Unidad", "P. unitario", "Total neto"].map((value, i) => ({ value, width: widths[i], bold: true, fill: LIGHT, align: i >= 4 ? "right" : "left" })), false, 7, 4, undefined, { horizontalRules: true });
   };
   tableHeader();
   items.forEach((item, index) => {
     const values = [index + 1, `${item.name}${item.detail ? `\n${item.detail}` : ""}`, Number(item.quantity).toLocaleString("es-CL", { maximumFractionDigits: 4 }), item.unit, quoteMoney(item.unitPrice), quoteMoney(Number(item.unitPrice) * Number(item.quantity))];
-    l.row(values.map((value, i) => ({ value, width: widths[i], bold: i !== 1, fill: index % 2 ? LIGHT : WHITE, align: i >= 4 ? "right" : "left" })), true, 8, 5, tableHeader);
+    l.row(values.map((value, i) => ({ value, width: widths[i], bold: i === 0 || i >= 4, align: i >= 4 ? "right" : "left" })), false, 8, 5, tableHeader, { horizontalRules: true });
   });
   l.gap(12);
   const discountPercent = Number(payload.discountPercent ?? payload.discount_percent ?? 0);
   const taxPercent = Number(payload.taxPercent ?? payload.tax_percent ?? 19);
   const totals = [["Subtotal bruto", quote.grossSubtotal], [`Descuento${discountPercent ? ` ${discountPercent}%` : ""}`, Math.max(0, Number(quote.grossSubtotal) - Number(quote.netSubtotal))], ["Subtotal neto", quote.netSubtotal], [`IVA ${taxPercent}%`, quote.tax], ["TOTAL IVA INCLUIDO", quote.total]];
-  l.ensure(125);
-  totals.forEach(([label, value], i) => l.row([
-    { value: label, width: l.width / 2, bold: true, fill: PALE_BLUE },
-    { value: `${i === 1 && Number(value) ? "- " : ""}${quoteMoney(value)}`, width: l.width / 2, bold: true, align: "right", fill: i === 4 ? [0.83, 0.90, 0.98] : PALE_BLUE },
-  ]));
-  l.gap(18); l.section("CONDICIONES COMERCIALES");
+  // Keep the economic summary together and aligned to the amount columns.
+  // Measure wrapped values too, so large amounts never collide or get clipped.
+  const summaryWidth = 320, labelWidth = 164, amountWidth = summaryWidth - labelWidth;
+  const summaryLeft = PAGE_WIDTH - MARGIN - summaryWidth;
+  const summaryRows = totals.map(([label, value], i) => {
+    const last = i === totals.length - 1;
+    const size = last ? 9.5 : 8.5;
+    const formatted = `${i === 1 && Number(value) ? "- " : ""}${quoteMoney(value)}`;
+    const lines = Math.max(wrapText(label, labelWidth - 10, size, last).length, wrapText(formatted, amountWidth - 10, size, true).length);
+    return { label, formatted, size, last, height: lines * (size + 3) + 10 };
+  });
+  l.ensure(summaryRows.reduce((sum, row) => sum + row.height, 0) + 6);
+  l.pdf.line(l.page, summaryLeft, l.y, PAGE_WIDTH - MARGIN, l.y);
+  summaryRows.forEach(({ label, formatted, size, last }) => {
+    if (last) l.pdf.line(l.page, summaryLeft, l.y, PAGE_WIDTH - MARGIN, l.y, BLUE, 1);
+    l.row([
+      { value: label, width: labelWidth, bold: last, color: last ? NAVY : SLATE, fill: last ? LIGHT : undefined },
+      { value: formatted, width: amountWidth, bold: true, align: "right", fill: last ? LIGHT : undefined },
+    ], false, size, 5, undefined, { x: summaryLeft });
+  });
+  l.gap(14); l.section("CONDICIONES COMERCIALES");
   for (const [a, b, c, d] of [["Forma de pago", payload.paymentTerms ?? payload.payment_terms ?? "Por definir", "Plazo", payload.deliveryTerms ?? payload.delivery_terms ?? "Por definir"], ["Moneda", `${quote.currency} - valores netos`, "Estado", quote.status]]) {
-    l.row([{ value: a, width: 74, bold: true, fill: PALE_BLUE }, { value: b, width: 194 }, { value: c, width: 73, bold: true, fill: PALE_BLUE }, { value: d, width: l.width - 341 }]);
+    l.row([{ value: a, width: 74, bold: true, color: SLATE }, { value: b, width: 194 }, { value: c, width: 73, bold: true, color: SLATE }, { value: d, width: l.width - 341 }], false, 8, 6, undefined, { horizontalRules: true });
   }
   const validation = payload.technicalValidation ?? payload.technical_validation;
   if (cleanText(validation)) { l.gap(); l.box("VALIDACIÓN TÉCNICA", validation, [1, 0.97, 0.85]); }
   for (const [label, value] of [["ALCANCE Y EXCLUSIONES", payload.scopeExclusions], ["OBSERVACIONES", payload.notes]]) {
     if (cleanText(value)) { l.gap(); l.section(label); l.paragraph(value); }
   }
-  l.gap(18); l.ensure(90);
-  l.row([
-    { value: `Por ${companyValue(company, "commercial_name", "name") || "SOLIS Ingeniería y Servicios SpA"}\n${companyValue(company, "representative", "contact_name") || "Responsable comercial"}\n\nFirma: __________________________`, width: l.width / 2, bold: true, fill: LIGHT },
-    { value: "Aceptación del cliente\n\n\nNombre y firma: _____________________", width: l.width / 2, bold: true, fill: LIGHT },
-  ]);
+  const signatures: PdfCell[] = [
+    { value: `Por ${companyValue(company, "commercial_name", "name") || "SOLIS Ingeniería y Servicios SpA"}\n${companyValue(company, "representative", "contact_name") || "Responsable comercial"}\n\nFirma: __________________________`, width: l.width / 2 },
+    { value: "Aceptación del cliente\n\n\nNombre y firma: _____________________", width: l.width / 2 },
+  ];
+  const signatureHeight = Math.max(...signatures.map(cell => wrapText(cell.value, cell.width - 12, 8).length)) * 11 + 12;
+  l.ensure(signatureHeight + 18); l.gap(18);
+  l.row(signatures, false);
   return l.bytes();
 }
 
