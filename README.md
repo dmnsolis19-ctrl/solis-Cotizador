@@ -2,7 +2,9 @@
 
 Aplicación empresarial para cotizaciones, órdenes de trabajo, ejecución en terreno, inventario, compras, cobros y rentabilidad. Se ejecuta sobre Cloudflare Workers, usa D1 para datos estructurados y R2 para documentos y evidencias.
 
-La entrega actual es **v3.7.2**. El PDF comercial presenta filas blancas, encabezado gris discreto y totales compactos a la derecha, con firmas ajustadas al contenido. Consulte [la guía de actualización v3.7.2](docs/ACTUALIZACION_V3_7_2.md). Las emisiones PDF históricas se conservan; emita una nueva versión documental para usar el diseño.
+La entrega actual es **v3.8.0**: papelera recuperable de cotizaciones y clientes, etiquetas QR/Code 128, escaneo y recepción de inventario por lotes, seguimiento comercial y tarjetas adaptadas a móvil/tablet. Consulte [la guía de actualización y uso v3.8.0](docs/ACTUALIZACION_V3_8_0.md) y [el alcance de la validación](docs/VALIDACION_V3_8_0.md). No requiere migraciones nuevas sobre v3.7.2.
+
+El diseño PDF de v3.7.2 se conserva. El PDF comercial presenta filas blancas, encabezado gris discreto y totales compactos a la derecha, con firmas ajustadas al contenido. Consulte [la guía de actualización v3.7.2](docs/ACTUALIZACION_V3_7_2.md). Las emisiones PDF históricas se conservan; emita una nueva versión documental para usar el diseño.
 
 La v3.7.1 mejora la importación de precios con tarjetas para teléfono, filtro de errores e informe de revisión CSV, y corrige el arranque de los scripts copiados sin permisos de ejecución. Consulte [la guía de actualización v3.7.1](docs/ACTUALIZACION_V3_7_1.md).
 

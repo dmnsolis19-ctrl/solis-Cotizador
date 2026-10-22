@@ -11,6 +11,9 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "vendor/qrcodegen.ts",
+    "vendor/code128-constants.ts",
+    "vendor/jsqr.mjs",
     "next-env.d.ts",
   ]),
   {
