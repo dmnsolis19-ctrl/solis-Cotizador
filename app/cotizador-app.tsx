@@ -140,6 +140,11 @@ import { SupplierComparisonPanel } from "@/components/supplier-comparison-panel"
 import { PriceReferencePanel } from "@/components/price-reference-panel";
 import { CompanySettingsPanel } from "@/components/company-settings-panel";
 import { APP_VERSION } from "@/lib/app-version";
+import { commercialOverview, matchesCommercialSearch } from "@/lib/commercial-overview";
+import { QuoteWorkspace } from "@/components/quote-workspace";
+import { OperationsOverview } from "@/components/operations-overview";
+import { RecycleBin, type ArchiveTarget } from "@/components/recycle-bin";
+import { StockScanPanel } from "@/components/stock-scan-panel";
 import { composeQuoteLines, materialGroupsSchema, materialLines, type MaterialGroup } from "@/lib/material-groups";
 import { MaterialGroupsEditor } from "@/components/material-groups-editor";
 import { QuoteMaterialsPanel } from "@/components/quote-materials-panel";
@@ -328,7 +333,7 @@ type Supplier = { publicId: string; code: string; name: string; taxId: string; c
 type PurchaseItem = { publicId: string; catalogItemPublicId: string; description: string; quantity: number; unit: string; unitCost: number; lineTotal: number; receivedQuantity: number };
 type PurchaseRequest = { updatedAt?: string; dispatchNet?: number | string; publicId: string; number: string; materialRequestPublicId: string; workOrderPublicId: string; warehousePublicId: string; status: string; supplierPublicId: string; supplier: string; currency: string; discountPercent: number; taxPercent: number; subtotal: number; discountAmount: number; netSubtotal: number; taxAmount: number; total: number; notes: string; approvedBy: string; approvedAt: string; orderedAt: string; createdAt: string; order?: { publicId: string; number: string; clientName: string; project: string }; items: PurchaseItem[] };
 type InventoryMovement = { publicId: string; warehousePublicId: string; catalogItemPublicId: string; movementType: string; quantity: number; stockBefore: number; stockAfter: number; reservedBefore: number; reservedAfter: number; reference: string; reason: string; actor: string; createdAt: string };
-type InventoryCatalogOption = { publicId: string; code: string; name: string; unit: string; type: string; unitCost: number };
+type InventoryCatalogOption = { currency?: string; publicId: string; code: string; name: string; unit: string; type: string; unitCost: number };
 type InventoryData = { warehouses: InventoryWarehouse[]; balances: InventoryBalance[]; movements: InventoryMovement[]; materialRequests: InventoryRequest[]; purchases: PurchaseRequest[]; suppliers: Supplier[]; catalogItems: InventoryCatalogOption[]; canManage: boolean; canManagePurchases: boolean; canApprovePurchases: boolean; canDocumentPurchases: boolean };
 type BillingPayment = { publicId: string; paymentDate: string; amount: number; method: string; reference: string; notes: string; recordedBy: string; createdAt: string };
 type BillingDocument = { publicId: string; number: string; workOrderPublicId: string; quotePublicId: string; clientName: string; project: string; concept: string; status: string; currency: string; issueDate: string; dueDate: string; netAmount: number; taxPercent: number; taxAmount: number; totalAmount: number; paidAmount: number; balance: number; notes: string; issuedAt: string; voidReason: string; payments: BillingPayment[] };
@@ -557,6 +562,7 @@ function overlayPendingOperations(
         approvedBy: "",
         approvalNotes: "",
         updatedAt: String(payload.expectedUpdatedAt || existingQuote?.updatedAt || operation.createdAt),
+        payloadJson: JSON.stringify(payload),
       };
       next.quotes = [
         quote,
@@ -588,6 +594,7 @@ export default function CotizadorApp() {
   const [query, setQuery] = useState("");
   const [clientOpen, setClientOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<ArchiveTarget | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [editingCatalog, setEditingCatalog] = useState<CatalogItem | null>(null);
   const [bundlesRevision, setBundlesRevision] = useState(0);
@@ -623,6 +630,18 @@ export default function CotizadorApp() {
     (permission: Permission) => data.session.permissions.includes(permission),
     [data.session.permissions],
   );
+
+  const requestArchive = async (target: ArchiveTarget) => {
+    if (!online) { toast.error("Conéctese para enviar registros a la papelera."); return; }
+    try {
+      const operations = await listOperations();
+      if (operations.some(operation => operation.type.startsWith(`${target.kind}.`) && operation.payload.publicId === target.publicId)) {
+        toast.error("Sincronice o resuelva primero los cambios pendientes de este registro.");
+        return;
+      }
+      setArchiveTarget(target);
+    } catch { toast.error("No fue posible comprobar los cambios pendientes. Reintente antes de eliminar."); }
+  };
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -872,30 +891,17 @@ export default function CotizadorApp() {
     void refresh();
   };
 
-  const filteredQuotes = useMemo(
-    () =>
-      data.quotes.filter((q) =>
-        `${q.number} ${q.clientName} ${q.project}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-      ),
-    [data.quotes, query],
-  );
   const filteredClients = useMemo(
     () =>
       data.clients.filter((c) =>
-        `${c.name} ${c.taxId} ${c.contactName}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
+        matchesCommercialSearch(`${c.name} ${c.taxId} ${c.contactName} ${c.email} ${c.phone}`, query),
       ),
     [data.clients, query],
   );
   const filteredCatalog = useMemo(
     () =>
       data.catalogItems.filter((i) =>
-        `${i.code} ${i.name} ${i.type} ${i.category}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
+        matchesCommercialSearch(`${i.code} ${i.name} ${i.type} ${i.category} ${i.supplier}`, query),
       ),
     [data.catalogItems, query],
   );
@@ -909,13 +915,6 @@ export default function CotizadorApp() {
         return leftOverdue - rightOverdue || (priorityRank[left.priority] ?? 2) - (priorityRank[right.priority] ?? 2) || (left.dueDate || "9999").localeCompare(right.dueDate || "9999");
       });
   }, [data.workOrders, query]);
-  const totalQuoted = data.quotes.reduce(
-    (sum, quote) => sum + Number(quote.netSubtotal || 0),
-    0,
-  );
-  const pending = data.quotes.filter((quote) =>
-    ["Borrador", "Enviada", "Pendiente"].includes(quote.status),
-  ).length;
   const companyName = String(
     data.company.commercial_name || data.company.name || "SOLIS",
   );
@@ -1205,9 +1204,9 @@ export default function CotizadorApp() {
           ) : section === "dashboard" ? (
             <Dashboard
               data={data}
-              totalQuoted={totalQuoted}
-              pending={pending}
-              onSection={setSection}
+              onSection={(next) => { setQuery(""); setSection(next); }}
+              onOpenQuote={can("quotes.flow") || can("documents.quote") ? setSelectedQuote : undefined}
+              onOpenOrder={can("orders.write") || can("documents.order") ? setSelectedOrder : undefined}
               onNewQuote={() => { setEditingQuote(null); setQuoteOpen(true); }}
               onImport={() => importRef.current?.click()}
               importing={importing}
@@ -1280,8 +1279,13 @@ export default function CotizadorApp() {
                 </div>
               </div>
               {section === "quotes" && (
-                <QuotesTable
-                  quotes={filteredQuotes}
+                <QuoteWorkspace
+                  quotes={data.quotes}
+                  clients={data.clients}
+                  query={query}
+                  online={online}
+                  onClearSearch={() => setQuery("")}
+                  onDelete={can("quotes.write") ? (quote) => void requestArchive({ kind: "quote", publicId: quote.publicId, title: quote.number, updatedAt: quote.updatedAt }) : undefined}
                   onManage={
                     can("quotes.flow") || can("documents.quote")
                       ? setSelectedQuote
@@ -1293,9 +1297,11 @@ export default function CotizadorApp() {
               {section === "clients" && (
                 <ClientsTable
                   clients={filteredClients}
+                  onDelete={can("clients.write") ? (client) => void requestArchive({ kind: "client", publicId: client.publicId, title: client.name, updatedAt: client.updatedAt }) : undefined}
                   onEdit={can("clients.write") ? (client) => { setEditingClient(client); setClientOpen(true); } : undefined}
                 />
               )}
+              {(section === "quotes" && can("quotes.write") || section === "clients" && can("clients.write")) && <RecycleBin kind={section === "quotes" ? "quote" : "client"} online={online} target={archiveTarget} onClose={() => setArchiveTarget(null)} onChanged={refresh} />}
               {section === "catalog" && (
                 <div className="space-y-5">{can("catalog.write") && <CatalogImportPanel online={online} onImported={refresh} />}<MetalconPanel online={online} canWrite={can("catalog.write")} catalog={data.catalogItems} onImported={refresh} onQueued={() => void updateQueueStatus()} onBundleSaved={() => setBundlesRevision(value => value + 1)} /><CatalogBundlesPanel refreshKey={bundlesRevision} catalog={data.catalogItems} canWrite={can("catalog.write")} onQueued={() => void updateQueueStatus()} /><LaborPanel canWrite={can("catalog.write")} existingCodes={data.catalogItems.map(i => i.code)} onSaved={refresh} onQueued={() => void updateQueueStatus()} /><PriceReferencePanel online={online} canImport={can("catalog.write")} existingCodes={data.catalogItems.map((item) => item.code)} onImported={refresh} /><CatalogTable items={filteredCatalog} onEdit={can("catalog.write") ? (item) => { setEditingCatalog(item); setCatalogOpen(true); } : undefined} /></div>
               )}
@@ -1482,9 +1488,9 @@ function AccessDenied({ message }: { message: string }) {
 
 function Dashboard({
   data,
-  totalQuoted,
-  pending,
   onSection,
+  onOpenQuote,
+  onOpenOrder,
   onNewQuote,
   onImport,
   importing,
@@ -1492,9 +1498,9 @@ function Dashboard({
   canImport,
 }: {
   data: DashboardData;
-  totalQuoted: number;
-  pending: number;
   onSection: (s: Section) => void;
+  onOpenQuote?: (quote: Quote) => void;
+  onOpenOrder?: (order: WorkOrder) => void;
   onNewQuote: () => void;
   onImport: () => void;
   importing: boolean;
@@ -1502,6 +1508,8 @@ function Dashboard({
   canImport: boolean;
 }) {
   const technician = data.session.user.role === "technician";
+  const overview = commercialOverview(data.quotes);
+  const pending = overview.drafts.length + overview.sent.length + overview.queued.length;
   const cards = technician
     ? [
         {
@@ -1538,30 +1546,30 @@ function Dashboard({
       ]
     : [
         {
-          label: "Venta cotizada",
-          value: money(totalQuoted),
-          note: `${data.quotes.length} documentos`,
+          label: "Cotizaciones actuales",
+          value: String(overview.latest.length),
+          note: "Una última revisión por oferta cargada",
           icon: CircleDollarSign,
           accent: "text-emerald-600 bg-emerald-50",
         },
         {
           label: "Pendientes",
           value: String(pending),
-          note: "Borradores y enviadas",
+          note: "Borradores, enviadas y sin sincronizar",
           icon: BriefcaseBusiness,
           accent: "text-blue-600 bg-blue-50",
         },
         {
           label: "Clientes",
           value: String(data.clients.length),
-          note: "Activos en la base",
+          note: "Clientes activos cargados",
           icon: Users,
           accent: "text-violet-600 bg-violet-50",
         },
         {
           label: "Biblioteca",
           value: String(data.catalogItems.length),
-          note: "Ítems disponibles",
+          note: "Ítems cargados en biblioteca",
           icon: BookOpen,
           accent: "text-amber-600 bg-amber-50",
         },
@@ -1569,18 +1577,17 @@ function Dashboard({
   return (
     <div className="space-y-6">
       <section className="relative overflow-hidden rounded-2xl bg-slate-950 p-6 text-white shadow-sm md:p-8">
-        <div className="absolute -right-16 -top-20 size-64 rounded-full border-[38px] border-amber-400/10" />
+        <div className="absolute -right-16 -top-20 size-64 rounded-full border-[38px] border-blue-500/10" />
         <div className="relative flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
           <div>
-            <Badge className="mb-3 bg-amber-400 text-slate-950">
-              PWA v{APP_VERSION} · Cotizaciones y operación offline
+            <Badge className="mb-3 bg-blue-100 text-blue-950">
+              PWA v{APP_VERSION} · Oficina y terreno
             </Badge>
             <h1 className="max-w-2xl text-2xl font-bold tracking-tight md:text-3xl">
-              Del presupuesto aprobado a la evidencia real del trabajo ejecutado.
+              {technician ? "Tus trabajos, compromisos y avances en un solo lugar." : "Cotiza, organiza y haz seguimiento a cada proyecto."}
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-              Checklist, horas, materiales, fotografías y recepción del cliente
-              protegidos por usuario en Cloudflare D1 y R2.
+              {technician ? "Revisa tus asignaciones y registra la ejecución desde terreno, incluso cuando trabajas sin conexión." : "Revisa las ofertas que requieren atención, consulta la cartera por moneda y continúa con tus clientes."}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1630,7 +1637,8 @@ function Dashboard({
           </Card>
         ))}
       </section>
-      <section className="grid gap-5 xl:grid-cols-[1.55fr_.8fr]">
+      <OperationsOverview quotes={data.quotes} orders={data.workOrders} canReadQuotes={data.session.permissions.includes("quotes.read")} canReadOrders={data.session.permissions.includes("orders.read")} onQuote={onOpenQuote} onOrder={onOpenOrder} onQuotes={() => onSection("quotes")} onOrders={() => onSection("orders")} />
+      <section className="grid gap-5">
         <Card className="border-0 shadow-sm">
           <CardHeader className="flex-row items-center justify-between">
             <div>
@@ -1653,54 +1661,13 @@ function Dashboard({
           </CardHeader>
           <CardContent>
             {technician ? (
-              <OrdersTable orders={data.workOrders.slice(0, 6)} />
+              <OrdersTable orders={data.workOrders.slice(0, 6)} onManage={onOpenOrder} />
             ) : (
-              <QuotesTable quotes={data.quotes.slice(0, 6)} compact />
+              <QuotesTable quotes={overview.latest.slice(0, 6)} compact onManage={onOpenQuote} />
             )}
           </CardContent>
         </Card>
-        <Card className="border-0 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base">Identidad y seguridad</CardTitle>
-            <CardDescription>Cloudflare D1 + R2 + IndexedDB</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between rounded-xl border bg-slate-50 p-4">
-              <div className="flex items-center gap-3">
-                <ShieldCheck className="size-5 text-emerald-600" />
-                <div>
-                  <div className="text-sm font-semibold">
-                    Permisos en servidor
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    {ROLE_LABELS[data.session.user.role]} ·{" "}
-                    {data.session.permissions.length} permisos
-                  </div>
-                </div>
-              </div>
-              <Badge variant="outline">Activo</Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-center">
-              <div className="rounded-xl border p-3">
-                <div className="text-xl font-bold">
-                  {data.sourceSchemaVersion || "—"}
-                </div>
-                <div className="text-xs text-slate-500">Esquema origen</div>
-              </div>
-              <div className="rounded-xl border p-3">
-                <div className="text-xl font-bold">
-                  {data.workOrders.length}
-                </div>
-                <div className="text-xs text-slate-500">Órdenes de trabajo</div>
-              </div>
-            </div>
-            {canImport && (
-              <Button variant="outline" className="w-full" onClick={onImport}>
-                <FileJson /> Importar respaldo JSON
-              </Button>
-            )}
-          </CardContent>
-        </Card>
+
       </section>
     </div>
   );
@@ -1719,7 +1686,7 @@ function QuotesTable({
 }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-white">
-      <Table>
+      <Table className="mobile-card-table">
         <TableHeader>
           <TableRow className="bg-slate-50">
             <TableHead>Número</TableHead>
@@ -1727,14 +1694,14 @@ function QuotesTable({
             <TableHead>Estado</TableHead>
             {!compact && <TableHead className="text-right">Margen</TableHead>}
             <TableHead className="text-right">Total</TableHead>
-            {!compact && <TableHead />}
+            {(!compact || onManage || onEdit) && <TableHead />}
           </TableRow>
         </TableHeader>
         <TableBody>
           {quotes.length ? (
             quotes.map((q) => (
               <TableRow key={q.publicId}>
-                <TableCell>
+                <TableCell data-label="Cotización">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-slate-900">
                       {q.number}
@@ -1750,29 +1717,29 @@ function QuotesTable({
                       : ""}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell data-label="Descripción">
                   <div className="font-medium">{q.clientName}</div>
                   <div className="max-w-[260px] truncate text-xs text-slate-500">
                     {q.project}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell data-label="Estado">
                   <Badge variant="outline" className={statusClass(q.status)}>
                     {q.status}
                   </Badge>
                 </TableCell>
                 {!compact && (
-                  <TableCell
+                  <TableCell data-label="Margen"
                     className={`text-right font-semibold ${Number(q.marginPercent) < 0 ? "text-red-600" : "text-slate-700"}`}
                   >
                     {Number(q.marginPercent).toFixed(1)}%
                   </TableCell>
                 )}
-                <TableCell className="text-right font-semibold">
+                <TableCell data-label="Total" className="text-right font-semibold">
                   {money(q.total, q.currency)}
                 </TableCell>
-                {!compact && (
-                  <TableCell className="text-right">
+                {(!compact || onManage || onEdit) && (
+                  <TableCell data-label="Acciones" className="text-right">
                     <div className="flex justify-end gap-2">
                       {onEdit && !q.locked && q.status === "Borrador" && (
                         <Button variant="outline" size="sm" onClick={() => onEdit(q)}>
@@ -1804,10 +1771,10 @@ function QuotesTable({
     </div>
   );
 }
-function ClientsTable({ clients, onEdit }: { clients: Client[]; onEdit?: (client: Client) => void }) {
+function ClientsTable({ clients, onEdit, onDelete }: { clients: Client[]; onEdit?: (client: Client) => void; onDelete?: (client: Client) => void }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
-      <Table>
+      <Table className="mobile-card-table">
         <TableHeader>
           <TableRow className="bg-slate-50">
             <TableHead>Cliente</TableHead>
@@ -1822,17 +1789,18 @@ function ClientsTable({ clients, onEdit }: { clients: Client[]; onEdit?: (client
           {clients.length ? (
             clients.map((c) => (
               <TableRow key={c.publicId}>
-                <TableCell className="font-semibold">{c.name}</TableCell>
-                <TableCell>{c.taxId || "—"}</TableCell>
-                <TableCell>{c.contactName || "—"}</TableCell>
-                <TableCell>{c.email || "—"}</TableCell>
-                <TableCell>{c.phone || "—"}</TableCell>
+                <TableCell data-label="Cliente" className="font-semibold">{c.name}</TableCell>
+                <TableCell data-label="RUT">{c.taxId || "—"}</TableCell>
+                <TableCell data-label="Contacto">{c.contactName || "—"}</TableCell>
+                <TableCell data-label="Correo">{c.email || "—"}</TableCell>
+                <TableCell data-label="Teléfono">{c.phone || "—"}</TableCell>
                 {onEdit && (
-                  <TableCell className="text-right">
+                  <TableCell data-label="Acciones" className="text-right"><div className="flex flex-wrap justify-end gap-2">
                     <Button variant="outline" size="sm" onClick={() => onEdit(c)}>
                       <PenLine /> Editar
                     </Button>
-                  </TableCell>
+                    {onDelete && <Button size="sm" variant="ghost" className="text-red-700" onClick={() => onDelete(c)}>Eliminar</Button>}
+                    </div></TableCell>
                 )}
               </TableRow>
             ))
@@ -3533,6 +3501,7 @@ function InventoryPanel({ online, onQueued }: { online: boolean; onQueued(): voi
         <ExecutionMetric label="Ítems con reserva" value={String(reservedItems)} icon={ClipboardCheck} />
         <ExecutionMetric label="Alertas de stock" value={String(lowStock)} icon={AlertTriangle} />
       </div>
+      {data.canManage && <StockScanPanel items={data.catalogItems} warehouses={data.warehouses} online={online} onReceived={load} />}
       {!online && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">El inventario se muestra en modo consulta. Reservas, entregas, devoluciones y compras requieren conexión para evitar saldos duplicados.</div>}
       {data.canManagePurchases && <SupplierComparisonPanel purchases={data.purchases} suppliers={data.suppliers} online={online} onChanged={() => void load()} onQueued={onQueued} />}
       <Tabs value={tab} onValueChange={setTab}>
@@ -3548,7 +3517,7 @@ function InventoryPanel({ online, onQueued }: { online: boolean; onQueued(): voi
             <Card><CardHeader><CardTitle className="text-base">Nueva bodega</CardTitle><CardDescription>Ubicación física independiente para controlar existencias.</CardDescription></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2"><FieldControlled label="Código" value={warehouseCode} onChange={setWarehouseCode} placeholder="BOD-CEN" /><FieldControlled label="Nombre" value={warehouseName} onChange={setWarehouseName} placeholder="Bodega central" /><div className="sm:col-span-2"><FieldControlled label="Ubicación" value={warehouseLocation} onChange={setWarehouseLocation} placeholder="Dirección o sector" /></div><div className="sm:col-span-2 flex justify-end"><Button onClick={() => void createWarehouse()} disabled={working || !online}><Warehouse /> Crear bodega</Button></div></CardContent></Card>
             <Card><CardHeader><CardTitle className="text-base">Entrada de material</CardTitle><CardDescription>Registra inventario inicial o reposiciones con su costo real.</CardDescription></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label>Bodega</Label><select value={receiptWarehouse} onChange={(event) => setReceiptWarehouse(event.target.value)} className="h-10 w-full rounded-md border bg-white px-3 text-sm"><option value="">Seleccione</option>{data.warehouses.filter((warehouse) => warehouse.active).map((warehouse) => <option key={warehouse.publicId} value={warehouse.publicId}>{warehouse.code} · {warehouse.name}</option>)}</select></div><div className="space-y-2"><Label>Material de la biblioteca</Label><select value={receiptItem} onChange={(event) => { setReceiptItem(event.target.value); const item = data.catalogItems.find((candidate) => candidate.publicId === event.target.value); if (item) setReceiptUnitCost(String(item.unitCost)); }} className="h-10 w-full rounded-md border bg-white px-3 text-sm"><option value="">Seleccione</option>{data.catalogItems.map((item) => <option key={item.publicId} value={item.publicId}>{item.code} · {item.name}</option>)}</select></div><FieldControlled label="Cantidad" value={receiptQuantity} onChange={setReceiptQuantity} type="number" /><FieldControlled label="Costo unitario" value={receiptUnitCost} onChange={setReceiptUnitCost} type="number" /><FieldControlled label="Stock mínimo" value={receiptMinimum} onChange={setReceiptMinimum} type="number" /><FieldControlled label="Referencia" value={receiptReference} onChange={setReceiptReference} placeholder="Factura, guía o inventario inicial" /><div className="sm:col-span-2 flex justify-end"><Button onClick={() => void receiveStock()} disabled={working || !online}><PackagePlus /> Registrar entrada</Button></div></CardContent></Card>
           </div>}
-          <div className="overflow-x-auto rounded-xl border bg-white"><Table><TableHeader><TableRow><TableHead>Material</TableHead><TableHead>Bodega</TableHead><TableHead className="text-right">Físico</TableHead><TableHead className="text-right">Reservado</TableHead><TableHead className="text-right">Disponible</TableHead><TableHead className="text-right">Costo prom.</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Estado</TableHead>{data.canManage && <TableHead />}</TableRow></TableHeader><TableBody>{data.balances.length ? data.balances.map((balance) => { const health = inventoryHealth(balance.quantity, balance.reservedQuantity, balance.minimumQuantity); return <TableRow key={balance.publicId}><TableCell><div className="font-medium">{balance.itemCode || "SIN-CÓDIGO"} · {balance.itemName}</div><div className="text-xs text-slate-500">Unidad: {balance.unit} · mínimo {balance.minimumQuantity}</div></TableCell><TableCell>{warehouseNameById.get(balance.warehousePublicId) || "Bodega"}</TableCell><TableCell className="text-right">{balance.quantity}</TableCell><TableCell className="text-right">{balance.reservedQuantity}</TableCell><TableCell className="text-right font-semibold">{availableStock(balance.quantity, balance.reservedQuantity)}</TableCell><TableCell className="text-right">{money(balance.averageUnitCost, "CLP")}</TableCell><TableCell className="text-right font-semibold">{money(balance.inventoryValue, "CLP")}</TableCell><TableCell><Badge variant="outline" className={health === "Disponible" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : health === "Stock bajo" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-red-200 bg-red-50 text-red-700"}>{health}</Badge></TableCell>{data.canManage && <TableCell><Button variant="ghost" size="sm" onClick={() => { setAdjusting(balance); setAdjustQuantity(String(balance.quantity)); setAdjustMinimum(String(balance.minimumQuantity)); }}>Ajustar</Button></TableCell>}</TableRow>; }) : <TableRow><TableCell colSpan={data.canManage ? 9 : 8} className="h-28 text-center text-slate-500">Aún no hay existencias. Cree una bodega y registre la primera entrada.</TableCell></TableRow>}</TableBody></Table></div>
+          <div className="overflow-x-auto rounded-xl border bg-white"><Table className="mobile-card-table"><TableHeader><TableRow><TableHead>Material</TableHead><TableHead>Bodega</TableHead><TableHead className="text-right">Físico</TableHead><TableHead className="text-right">Reservado</TableHead><TableHead className="text-right">Disponible</TableHead><TableHead className="text-right">Costo prom.</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Estado</TableHead>{data.canManage && <TableHead />}</TableRow></TableHeader><TableBody>{data.balances.length ? data.balances.map((balance) => { const health = inventoryHealth(balance.quantity, balance.reservedQuantity, balance.minimumQuantity); return <TableRow key={balance.publicId}><TableCell data-label="Descripción"><div className="font-medium">{balance.itemCode || "SIN-CÓDIGO"} · {balance.itemName}</div><div className="text-xs text-slate-500">Unidad: {balance.unit} · mínimo {balance.minimumQuantity}</div></TableCell><TableCell data-label="Bodega">{warehouseNameById.get(balance.warehousePublicId) || "Bodega"}</TableCell><TableCell className="text-right" data-label="Físico">{balance.quantity}</TableCell><TableCell className="text-right" data-label="Reservado">{balance.reservedQuantity}</TableCell><TableCell className="text-right font-semibold" data-label="Disponible">{availableStock(balance.quantity, balance.reservedQuantity)}</TableCell><TableCell className="text-right" data-label="Costo promedio CLP">{money(balance.averageUnitCost, "CLP")}</TableCell><TableCell className="text-right font-semibold" data-label="Valor CLP">{money(balance.inventoryValue, "CLP")}</TableCell><TableCell data-label="Estado"><Badge variant="outline" className={health === "Disponible" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : health === "Stock bajo" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-red-200 bg-red-50 text-red-700"}>{health}</Badge></TableCell>{data.canManage && <TableCell data-label="Acciones"><Button variant="ghost" size="sm" onClick={() => { setAdjusting(balance); setAdjustQuantity(String(balance.quantity)); setAdjustMinimum(String(balance.minimumQuantity)); }}>Ajustar</Button></TableCell>}</TableRow>; }) : <TableRow><TableCell colSpan={data.canManage ? 9 : 8} className="h-28 text-center text-slate-500">Aún no hay existencias. Cree una bodega y registre la primera entrada.</TableCell></TableRow>}</TableBody></Table></div>
         </TabsContent>
         <TabsContent value="requests" className="mt-4 space-y-3">
           {data.materialRequests.length ? data.materialRequests.map((request) => {

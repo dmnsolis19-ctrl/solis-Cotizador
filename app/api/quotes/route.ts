@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { quoteItems, quotes } from "@/db/schema";
@@ -76,6 +76,7 @@ export async function GET(request: Request) {
     const [quote] = await db.select().from(quotes).where(and(
       eq(quotes.ownerEmail, session.ownerEmail),
       eq(quotes.publicId, publicId),
+      ne(quotes.status, "Eliminada"),
     )).limit(1);
     if (!quote) return Response.json({ error: "La cotización no existe." }, { status: 404 });
     const items = await db.select().from(quoteItems).where(and(

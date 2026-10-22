@@ -146,3 +146,19 @@ main select, [data-slot="dialog-content"] select { max-width: 100%; }
   .quote-lines-table td:first-child, .quote-lines-table td:last-child, .mobile-card-table td[data-label="Descripción"], .mobile-card-table td[data-label="Acciones"], .mobile-card-table td[colspan] { grid-column: 1 / -1; }
   .quote-lines-table td:last-child > div { justify-content: flex-start; flex-wrap: wrap; }
 }
+
+/* Adapt record tables to their actual space, including tablet with sidebar open. */
+[data-slot="table-container"] { container-type: inline-size; container-name: records; }
+@container records (max-width: 760px) {
+  .mobile-card-table, .mobile-card-table tbody { display: block; min-width: 0; }
+  .mobile-card-table thead { display: none; }
+  .mobile-card-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; padding: .5rem; border-bottom: 1px solid var(--border); }
+  .mobile-card-table td { display: block; width: auto; padding: .5rem; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+  .mobile-card-table td::before { content: attr(data-label); display: block; margin-bottom: .4rem; font-size: .7rem; color: #64748b; }
+  .mobile-card-table td[data-label="Descripción"], .mobile-card-table td[data-label="Acciones"], .mobile-card-table td[colspan] { grid-column: 1 / -1; }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  button, [role="button"] { min-height: 44px; }
+  [data-slot="input"], select { min-height: 44px; font-size: 16px; }
+}

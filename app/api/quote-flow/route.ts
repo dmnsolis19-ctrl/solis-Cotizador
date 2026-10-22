@@ -40,6 +40,8 @@ export async function POST(request: Request) {
       .where(and(eq(quotes.ownerEmail, ownerEmail), eq(quotes.publicId, input.quotePublicId))).limit(1);
     if (!quote) return Response.json({ error: "La cotización no existe." }, { status: 404 });
 
+    if (quote.status === "Eliminada") return Response.json({ error: "Restaure la cotización desde la papelera antes de continuar." }, { status: 409 });
+
     if (input.action === "lock") {
       if (!canFreeze(quote)) return Response.json({ error: "La versión ya está congelada." }, { status: 409 });
       if (pendingMaterialPrices(readMaterialGroups(quote.payloadJson))) return Response.json({ error: "Confirme los precios de todos los materiales antes de congelar la oferta." }, { status: 409 });

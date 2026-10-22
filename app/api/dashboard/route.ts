@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import { appSettings, catalogItems, clients, quoteEvents, quotes, workOrders } from "@/db/schema";
 import { authorizationResponse, requirePermission } from "@/lib/auth";
@@ -19,7 +19,7 @@ export async function GET() {
       db.select().from(appSettings).where(eq(appSettings.ownerEmail, ownerEmail)).limit(1),
       canReadClients ? db.select().from(clients).where(and(eq(clients.ownerEmail, ownerEmail), eq(clients.active, true))).orderBy(clients.name).limit(500) : Promise.resolve([]),
       canReadCatalog ? db.select().from(catalogItems).where(and(eq(catalogItems.ownerEmail, ownerEmail), eq(catalogItems.active, true))).orderBy(catalogItems.code).limit(1000) : Promise.resolve([]),
-      canReadQuotes ? db.select().from(quotes).where(eq(quotes.ownerEmail, ownerEmail)).orderBy(desc(quotes.issueDate), desc(quotes.updatedAt)).limit(100) : Promise.resolve([]),
+      canReadQuotes ? db.select().from(quotes).where(and(eq(quotes.ownerEmail, ownerEmail), ne(quotes.status, "Eliminada"))).orderBy(desc(quotes.issueDate), desc(quotes.updatedAt)).limit(100) : Promise.resolve([]),
       canReadOrders ? db.select().from(workOrders).where(orderScope).orderBy(desc(workOrders.updatedAt)).limit(100) : Promise.resolve([]),
       canReadQuotes ? db.select().from(quoteEvents).where(eq(quoteEvents.ownerEmail, ownerEmail)).orderBy(desc(quoteEvents.createdAt)).limit(500) : Promise.resolve([]),
     ]);
