@@ -2,7 +2,9 @@
 
 Aplicación empresarial para cotizaciones, órdenes de trabajo, ejecución en terreno, inventario, compras, cobros y rentabilidad. Se ejecuta sobre Cloudflare Workers, usa D1 para datos estructurados y R2 para documentos y evidencias.
 
-La entrega actual es **v3.7.1**. Mejora la importación de precios con tarjetas para teléfono, filtro de errores e informe de revisión CSV, y corrige el arranque de los scripts copiados sin permisos de ejecución. Consulte [la guía de actualización v3.7.1](docs/ACTUALIZACION_V3_7_1.md).
+La entrega actual es **v3.7.2**. El PDF comercial presenta filas blancas, encabezado gris discreto y totales compactos a la derecha, con firmas ajustadas al contenido. Consulte [la guía de actualización v3.7.2](docs/ACTUALIZACION_V3_7_2.md). Las emisiones PDF históricas se conservan; emita una nueva versión documental para usar el diseño.
+
+La v3.7.1 mejora la importación de precios con tarjetas para teléfono, filtro de errores e informe de revisión CSV, y corrige el arranque de los scripts copiados sin permisos de ejecución. Consulte [la guía de actualización v3.7.1](docs/ACTUALIZACION_V3_7_1.md).
 
 La v3.7.0 agrega una biblioteca de 56 referencias de Metalcon y complementos, con precios propios, vista previa de importación y conjuntos de Construcción. Conserva las correcciones de instalación, formulario, PDF y campos numéricos. Consulte [la guía de actualización y uso](docs/ACTUALIZACION_V3_7_0.md).
 
