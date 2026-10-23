@@ -49,10 +49,11 @@ sqlite.prepare('INSERT INTO work_orders (public_id, owner_email, number, quote_p
 for (const [id,number,net] of [[billId,'COB-001',100000],[bill2Id,'COB-002',200000]]) sqlite.prepare('INSERT INTO billing_documents (public_id, owner_email, number, work_order_public_id, quote_public_id, client_name, project, status, concept, currency, issue_date, net_amount, tax_percent, tax_amount, total_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id,state.owner,number,orderId,quoteId,'Receptor SpA','Proyecto solar','Emitida','Anticipo','CLP','2026-10-20',String(net),'19',String(net*.19),String(net*1.19));
 
 test('settings preserve legacy economics, reject stale updates and restrict administration', async () => {
-  const company={commercial_name:'SOLIS Prueba',tax_id:'12.345.678-5',accountant_email:'contador@solis.test'};
+  const company={commercial_name:'SOLIS Prueba',tax_id:'12.345.678-5',accountant_email:'contador@solis.test',representative_title:'Ingeniero',bank_account_holder:'SOLIS Prueba',bank_account_number:'000123456789',bank_name:'Banco de prueba',bank_account_type:'Corriente',bank_notification_email:'pagos@solis.test'};
   await okJson(await settings.POST(request('/api/settings',{company,expectedUpdatedAt:''})));
   const result=sqlite.prepare('SELECT * FROM app_settings').get();
   assert.equal(JSON.parse(result.company_json).tax_id,company.tax_id);
+  for(const key of ["representative_title","bank_account_holder","bank_account_number","bank_name","bank_account_type","bank_notification_email"])assert.equal(JSON.parse(result.company_json)[key],company[key]);
   assert.equal((await settings.POST(request('/api/settings',{company,expectedUpdatedAt:''}))).status,409);
   state.permissions=state.permissions.filter(p=>p!=='settings.manage');
   assert.equal((await settings.POST(request('/api/settings',{company,expectedUpdatedAt:result.updated_at}))).status,403);

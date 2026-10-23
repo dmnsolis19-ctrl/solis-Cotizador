@@ -22,16 +22,16 @@ function blocks(raw) {
   return { text: bytes.toString('latin1'), x: Number(x), y: Number(y), width: [...bytes].reduce((n, b) => n + (widths[Math.max(0, b - 32)] || 600), 0) / 1000 * Number(size) };
  });
 }
-test('five-item commercial quote has neutral fills, a compact right-aligned summary and signatures on one page', () => {
+test('five-item commercial quote follows blue reference tables, compact totals and signatures on one page', () => {
  const raw = Buffer.from(buildQuotePdf({ company, quote, items })).toString('latin1');
  assert.match(raw, /\/Type \/Pages \/Kids \[[^\]]+\] \/Count 1/);
  const fills = [...raw.matchAll(/([\d.]+) ([\d.]+) ([\d.]+) rg ([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) re f/g)];
- assert.ok(fills.length > 0); for (const [, r, g, b] of fills) assert.ok(Math.max(+r, +g, +b) - Math.min(+r, +g, +b) < 0.04, 'Commercial fills must remain neutral');
- const text = blocks(raw); const subtotal = text.find(b => b.text === 'Subtotal bruto'), total = text.find(b => b.text === 'TOTAL IVA INCLUIDO');
+ assert.ok(fills.some(([,r,,b,,,width])=>+b>0.7&&+r<0.1&&+width<220), 'Economic header uses the reference blue'); assert.ok(fills.some(([,r,,b])=>+r>0.9&&+b>+r), 'Metadata and summary use pale blue');
+ const text = blocks(raw); const subtotal = text.find(b => b.text === 'Subtotal neto'), total = text.find(b => b.text === 'TOTAL IVA INCLUIDO');
  assert.ok(subtotal.x > 200 && total.x > 200, 'Summary belongs on the right');
  assert.ok(total.y < subtotal.y); assert.ok(text.some(b => b.text.includes('Aceptación del cliente')));
  assert.ok(text.some(b => b.text.includes('1.931.969'))); assert.ok(text.some(b => b.text.includes('308.466')));
- const finalFill = fills.find(([, , , , x, , width]) => +x > 200 && +width < 200); assert.ok(finalFill, 'Only the compact total row is highlighted');
+ const finalFill = fills.find(([,r,,,x,,width])=>+r<0.9&&+r>0.8&&+x>300&&+width<130); assert.ok(finalFill, 'Only the compact total row has the stronger blue fill'); assert.ok(!text.some(b=>b.text==='Descuento'||b.text==='Subtotal bruto'), 'Zero-discount summaries show only net, tax and total');
 });
 test('large amounts in all supported currencies stay inside page margins without overlapping summary labels', () => {
  for (const currency of ['CLP', 'USD', 'EUR', 'UF']) {
@@ -41,4 +41,16 @@ test('large amounts in all supported currencies stay inside page margins without
   const summary = text.slice(summaryStart, end);
   for (const a of summary) for (const b of summary) if (a !== b && Math.abs(a.y - b.y) < 5) assert.ok(Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) <= 0.8, `${currency}: overlapping summary`);
  }
+});
+
+test('reference metadata, editable payment fields and actual revision control are included without hardcoded accounts', () => {
+ const bank={bank_account_holder:'Titular de prueba SpA',bank_account_tax_id:'76.123.456-7',bank_name:'Banco de ejemplo',bank_account_type:'Corriente',bank_account_number:'00123456789',bank_notification_email:'pagos@example.test',representative_title:'Ingeniero'};
+ const input={company:{...company,...bank},quote:{...quote,number:'COT-REF-001',revision:3,status:'Enviada',locked:true},items,client:{name:'Cliente de prueba',taxId:'77.123.456-7',contactName:'Contacto de ejemplo',phone:'+56911111111',email:'cliente@example.test',address:'Dirección de prueba 123'}};
+ const raw=Buffer.from(buildQuotePdf(input)).toString('latin1'), words=blocks(raw);
+ for(const expected of ['R03','Versión congelada','Teléfono','Correo','Dirección','DATOS DE PAGO',...Object.values(bank)])assert.ok(words.some(b=>b.text===expected),'Missing '+expected);
+ const account=words.find(b=>b.text===bank.bank_account_number);assert.ok(account,'Leading zeros are retained');
+ const cleared=blocks(Buffer.from(buildQuotePdf({...input,company:{...company,bank:'Legacy bank',bank_name:'',bank_account_holder:'',bank_account_type:'',bank_account_number:''}})).toString('latin1'));
+ assert.ok(!cleared.some(b=>b.text==='DATOS DE PAGO'||b.text==='Legacy bank'));
+ const draft=blocks(Buffer.from(buildQuotePdf({company,quote:{...quote,status:'Borrador'},items})).toString('latin1'));
+ assert.ok(draft.some(b=>b.text==='Borrador editable'));
 });
