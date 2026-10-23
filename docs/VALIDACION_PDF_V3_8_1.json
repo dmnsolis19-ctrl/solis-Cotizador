@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-22",
+  "reference": "PDF supplied by the owner; not distributed in the source ZIP",
+  "cases": [
+    {
+      "case": "Cotizacion_formato_SOLIS_v3.8.1.pdf",
+      "pages": 2,
+      "textWithinPage": true,
+      "visualInspection": "checked"
+    },
+    {
+      "case": "cotizacion-normal.pdf",
+      "pages": 1,
+      "textWithinPage": true,
+      "visualInspection": "checked"
+    },
+    {
+      "case": "cotizacion.pdf",
+      "pages": 3,
+      "textWithinPage": true,
+      "visualInspection": "checked"
+    }
+  ],
+  "referenceBankSectionOnOnePage": true,
+  "sourcePersonalAndBankDataNotSeeded": true
+}
