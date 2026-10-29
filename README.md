@@ -2,7 +2,9 @@
 
 Aplicación empresarial para cotizaciones, órdenes de trabajo, ejecución en terreno, inventario, compras, cobros y rentabilidad. Se ejecuta sobre Cloudflare Workers, usa D1 para datos estructurados y R2 para documentos y evidencias.
 
-La entrega actual es **v3.8.1**: adapta el PDF comercial al formato SOLIS de referencia, con ficha de cliente en recuadros, encabezado azul de partidas, filas alternadas, totales compactos y datos bancarios configurables. Consulte [la guía de actualización v3.8.1](docs/ACTUALIZACION_V3_8_1.md). Las emisiones históricas conservan su diseño; emita una nueva versión documental para aplicar este formato.
+La entrega actual es **v3.8.2**: corrige el límite de parámetros de Cloudflare D1 al crear cotizaciones y revisiones con muchas partidas, manteniendo cabecera y partidas en una misma transacción. Consulte [la guía v3.8.2](docs/ACTUALIZACION_V3_8_2.md). No requiere migraciones nuevas.
+
+La v3.8.1 adapta el PDF comercial al formato SOLIS de referencia, con ficha de cliente en recuadros, encabezado azul de partidas, filas alternadas, totales compactos y datos bancarios configurables. Consulte [la guía de actualización v3.8.1](docs/ACTUALIZACION_V3_8_1.md). Las emisiones históricas conservan su diseño; emita una nueva versión documental para aplicar este formato.
 
 Se mantienen las funciones v3.8.0: papelera recuperable, QR/Code 128, escaneo y recepción de inventario por lotes, seguimiento comercial y adaptación a teléfono/tablet. Consulte [la guía de uso v3.8.0](docs/ACTUALIZACION_V3_8_0.md). No requiere migraciones nuevas sobre v3.7.2 o v3.8.0.
 

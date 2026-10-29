@@ -9,6 +9,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const sqlite = new DatabaseSync(":memory:");
 for (const name of (await readdir(new URL("../drizzle/", import.meta.url))).filter((name) => name.endsWith(".sql")).sort()) sqlite.exec(await readFile(new URL(`../drizzle/${name}`, import.meta.url), "utf8"));
 function statement(sql, values = []) {
+  if (values.length > 100) throw new Error("D1_ERROR: too many SQL variables");
   const query = sqlite.prepare(sql);
   const returnsRows = /^\s*select\b|\breturning\b/i.test(sql);
   const result = () => { const results = returnsRows ? query.all(...values) : []; const run = returnsRows ? { changes: 0 } : query.run(...values); return { success: true, results, meta: { changes: Number(run.changes), last_row_id: Number(run.lastInsertRowid || 0) } }; };
@@ -78,4 +79,47 @@ test("direct email rejects internal documents, requires configuration and dedupl
   assert.equal((await delivery.POST(request("/api/document-delivery", { ...input, to: "other@example.test" }))).status, 409);
   sqlite.prepare("UPDATE document_snapshots SET security_profile = 'closure_internal_v1' WHERE public_id = ?").run(id);
   assert.equal((await delivery.POST(request("/api/document-delivery", { ...input, deliveryId: crypto.randomUUID() }))).status, 404); assert.equal(state.emails, 1);
+});
+
+
+test("creates 500 commercial lines under D1's 100-parameter limit and preserves quoted text, decimals and replay", async () => {
+  const publicId = crypto.randomUUID();
+  const items = Array.from({ length: 500 }, (_, i) => ({ name: `Partida ${i} - O'Higgins`, detail: 'Texto "cotizado"; SELECT no es código', quantity: 1.25, unit: 'un', unitCost: i + 0.25, unitPrice: i + 10.75 }));
+  const input = { publicId, clientName: 'Cliente D1', project: 'Proyecto de 500 partidas', issueDate: '2026-10-28', items };
+  const response = await route.POST(request('/api/quotes', input));
+  assert.equal(response.status, 201, JSON.stringify(await response.clone().json()));
+  const saved = sqlite.prepare('SELECT * FROM quote_items WHERE quote_public_id=? ORDER BY position').all(publicId);
+  assert.equal(saved.length, 500);
+  for (let i = 0; i < saved.length; i++) { assert.equal(saved[i].name, items[i].name); assert.equal(saved[i].detail, items[i].detail); assert.equal(saved[i].quantity, '1.25'); assert.equal(saved[i].unit_price, String(items[i].unitPrice)); }
+  assert.equal((await route.POST(request('/api/quotes', input))).status, 200);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM quote_items WHERE quote_public_id=?').get(publicId).n, 500);
+});
+
+test('revises 500 existing lines atomically under the D1 limit while retaining groups, source data and tenant isolation', async () => {
+  const id = crypto.randomUUID(), owner = state.owner;
+  const list = materials.emptyMaterialGroup(); list.materials[0].priceStatus = 'confirmed';
+  const payload = JSON.stringify({ materialGroups: [list], custom: 'CONSERVAR' });
+  sqlite.prepare("INSERT INTO quotes (public_id,owner_email,number,root_public_id,revision,client_name,project,issue_date,status,locked,payload_json) VALUES (?,?,?,?,0,'Cliente D1','Proyecto solar','2026-10-28','Enviada',1,?)").run(id,owner,'SIS-COT-D1-500',id,payload);
+  const insert=sqlite.prepare('INSERT INTO quote_items (public_id,owner_email,quote_public_id,position,name,detail,quantity,unit,unit_cost,unit_price) VALUES (?,?,?,?,?,?,?,?,?,?)');
+  for(let i=0;i<500;i++)insert.run(`${id}:item:${i}`,owner,id,i,`Partida ${i}`,"Detalle O'Higgins",'2.5','m','12.75','23.25');
+  insert.run(crypto.randomUUID(),'other@solis.test',id,999,'AJENO','No copiar','1','un','1','1');
+  const response=await flow.POST(request('/api/quote-flow',{action:'revision',quotePublicId:id,detail:'Cambio de alcance'}));
+  assert.equal(response.status,200,JSON.stringify(await response.clone().json()));const result=await response.json();
+  const revision=sqlite.prepare('SELECT * FROM quotes WHERE public_id=?').get(result.publicId);
+  assert.equal(revision.status,'Borrador');assert.equal(revision.locked,0);assert.equal(revision.parent_public_id,id);assert.equal(revision.root_public_id,id);assert.equal(revision.revision,1);
+  assert.deepEqual(JSON.parse(revision.payload_json).materialGroups,[list]);assert.equal(JSON.parse(revision.payload_json).custom,'CONSERVAR');
+  const copied=sqlite.prepare('SELECT * FROM quote_items WHERE quote_public_id=? ORDER BY position').all(result.publicId);assert.equal(copied.length,500);
+  for(let i=0;i<500;i++){assert.equal(copied[i].public_id,`${result.publicId}:item:${i}`);assert.equal(copied[i].name,`Partida ${i}`);assert.equal(copied[i].quantity,'2.5');assert.equal(copied[i].unit_cost,'12.75');assert.equal(copied[i].unit_price,'23.25');}
+  assert.equal(sqlite.prepare('SELECT locked FROM quotes WHERE public_id=?').get(id).locked,1);
+});
+
+test('failed item writes roll back the quote header and revision header, with no partial commercial versions', async () => {
+  sqlite.exec("CREATE TRIGGER fail_quote_line BEFORE INSERT ON quote_items BEGIN SELECT RAISE(ABORT,'injected line failure'); END;");
+  try {
+    const id=crypto.randomUUID();const response=await route.POST(request('/api/quotes',{publicId:id,clientName:'Cliente',project:'Fallo controlado',issueDate:'2026-10-28',items:[{name:'Partida',quantity:1,unit:'un',unitCost:1,unitPrice:2}]}));assert.equal(response.status,400);assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM quotes WHERE public_id=?').get(id).n,0);
+    const source=sqlite.prepare("SELECT public_id FROM quotes WHERE number='SIS-COT-D1-500'").get();
+    const before=sqlite.prepare('SELECT COUNT(*) AS n FROM quotes WHERE parent_public_id=?').get(source.public_id).n;
+    assert.equal((await flow.POST(request('/api/quote-flow',{action:'revision',quotePublicId:source.public_id,detail:'Fallo controlado'}))).status,400);
+    assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM quotes WHERE parent_public_id=?').get(source.public_id).n,before);
+  } finally {sqlite.exec('DROP TRIGGER fail_quote_line');}
 });
