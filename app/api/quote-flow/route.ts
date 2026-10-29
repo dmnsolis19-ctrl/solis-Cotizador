@@ -1,4 +1,4 @@
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { quoteEvents, quoteItems, quotes, workOrders } from "@/db/schema";
@@ -65,8 +65,8 @@ export async function POST(request: Request) {
       const publicId = crypto.randomUUID();
       const number = revisionNumber(quote.number, revision);
       const now = new Date().toISOString();
-      const items = await db.select().from(quoteItems).where(and(eq(quoteItems.ownerEmail, ownerEmail), eq(quoteItems.quotePublicId, quote.publicId))).orderBy(quoteItems.position);
-      if (!items.length) return Response.json({ error: "La versión de origen no contiene partidas y no puede revisarse." }, { status: 409 });
+      const [sourceItem] = await db.select({ publicId: quoteItems.publicId }).from(quoteItems).where(and(eq(quoteItems.ownerEmail, ownerEmail), eq(quoteItems.quotePublicId, quote.publicId))).limit(1);
+      if (!sourceItem) return Response.json({ error: "La versión de origen no contiene partidas y no puede revisarse." }, { status: 409 });
       await db.batch([
         db.insert(quotes).values({
           ...quote, publicId, number, rootPublicId: rootId, parentPublicId: quote.publicId, revision,
@@ -78,7 +78,14 @@ export async function POST(request: Request) {
           }),
           updatedAt: now,
         }),
-        db.insert(quoteItems).values(items.map((item) => ({ ...item, publicId: `${publicId}:item:${item.position}`, quotePublicId: publicId }))),
+        // Copy in SQL: four bound values regardless of the number of lines.
+        // Header and items remain in the same atomic D1 batch.
+        db.insert(quoteItems).select(sql`
+          SELECT ${publicId} || ':item:' || position, owner_email, ${publicId},
+            position, name, detail, quantity, unit, unit_cost, unit_price
+          FROM quote_items
+          WHERE owner_email = ${ownerEmail} AND quote_public_id = ${quote.publicId}
+        `),
       ]);
       await addEvent(ownerEmail, quote.publicId, "REVISION_DERIVADA", actor, `Nueva versión ${number}.`);
       await addEvent(ownerEmail, publicId, "REVISION_CREADA", actor, input.detail);

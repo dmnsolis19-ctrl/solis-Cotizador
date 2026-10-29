@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { and, count, eq, ne } from "drizzle-orm";
+import { and, count, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/db";
 import { quoteItems, quotes } from "@/db/schema";
@@ -147,11 +147,18 @@ export async function POST(request: Request) {
         internalCost: String(calculated.internalCost), estimatedProfit: String(calculated.estimatedProfit),
         marginPercent: String(calculated.marginPercent), payloadJson: JSON.stringify(payload), updatedAt: new Date().toISOString(),
       }),
-      db.insert(quoteItems).values(normalizedItems.map((item, position) => ({
-        publicId: `${publicId}:item:${position}`, ownerEmail, quotePublicId: publicId, position,
-        name: item.name, detail: item.detail, quantity: String(item.quantity), unit: item.unit,
-        unitCost: String(item.unitCost), unitPrice: String(item.unitPrice),
-      }))),
+      // A bound JSON array avoids 10 parameters per line and keeps the write
+      // in the same transaction as the quote header, even at 500 lines.
+      db.insert(quoteItems).select(sql`
+        SELECT ${publicId} || ':item:' || key, ${ownerEmail}, ${publicId},
+          CAST(key AS INTEGER), json_extract(value, '$.name'), json_extract(value, '$.detail'),
+          json_extract(value, '$.quantity'), json_extract(value, '$.unit'),
+          json_extract(value, '$.unitCost'), json_extract(value, '$.unitPrice')
+        FROM json_each(${JSON.stringify(normalizedItems.map(item => ({
+          name: item.name, detail: item.detail, quantity: String(item.quantity), unit: item.unit,
+          unitCost: String(item.unitCost), unitPrice: String(item.unitPrice),
+        })))})
+      `),
     ]);
     const [row] = await db.select().from(quotes).where(and(eq(quotes.ownerEmail, ownerEmail), eq(quotes.publicId, publicId))).limit(1);
     await writeAuditEvent(session, { action: "QUOTE_CREATED", entityType: "quote", entityPublicId: publicId, detail: { number, clientName: input.clientName, project: input.project } });
